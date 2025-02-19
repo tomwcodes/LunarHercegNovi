@@ -37,7 +37,7 @@ def get_moon_phase() -> tuple:
     Returns: tuple(phase_name, emoji)
     """
     try:
-        # Create observer for Herceg Novi
+        # Create observer for Herceg Nov
         observer = ephem.Observer()
         observer.lat = HERCEG_NOVI_LAT
         observer.lon = HERCEG_NOVI_LON
