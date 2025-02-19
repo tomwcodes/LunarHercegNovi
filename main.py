@@ -33,19 +33,19 @@ load_dotenv()
 HERCEG_NOVI_LAT = 42.4531
 HERCEG_NOVI_LON = 18.5375
 
-async def get_weather() -> tuple[Optional[float], Optional[float], Optional[float], Optional[str]]:
+async def get_weather() -> tuple[Optional[float], Optional[float], Optional[float]]:
     """
     Get current weather data for Herceg Novi from Weatherbit
-    Returns: tuple(temp, app_temp, pressure, description) or (None, None, None, None) if error
+    Returns: tuple(min_temp, max_temp, pressure) or (None, None, None) if error
     """
     try:
         api_key = os.getenv('WEATHERBIT_API_KEY')
         if not api_key:
             logger.error("Weatherbit API key not found in environment variables")
-            return None, None, None, None
+            return None, None, None
 
-        # Use current weather endpoint instead of forecast
-        url = f"https://api.weatherbit.io/v2.0/current?lat={HERCEG_NOVI_LAT}&lon={HERCEG_NOVI_LON}&key={api_key}&units=M"
+        # Add days parameter and specify units as metric
+        url = f"https://api.weatherbit.io/v2.0/forecast/daily?lat={HERCEG_NOVI_LAT}&lon={HERCEG_NOVI_LON}&key={api_key}&days=1"
 
         if os.getenv('ENVIRONMENT') != 'production':
             logger.info(f"Making request to Weatherbit API (without key): {url.split('key=')[0]}key=<HIDDEN>")
@@ -56,86 +56,50 @@ async def get_weather() -> tuple[Optional[float], Optional[float], Optional[floa
             # Check for specific error status codes
             if response.status_code == 403:
                 logger.error("Invalid or expired API key. Please check your Weatherbit API key.")
-                return None, None, None, None
+                return None, None, None
             elif response.status_code == 429:
                 logger.error("Too many requests. API rate limit exceeded.")
-                return None, None, None, None
+                return None, None, None
 
             response.raise_for_status()
             data = response.json()
 
             if os.getenv('ENVIRONMENT') != 'production':
-                # Log full response data for debugging
-                logger.info("Full API Response data:")
-                logger.info(data)
+                # Log response structure without sensitive data
+                safe_data = {k: v for k, v in data.items() if k != 'data'}
+                logger.info(f"API Response structure: {safe_data}")
 
             if 'data' in data and len(data['data']) > 0:
-                current_data = data['data'][0]
+                today_data = data['data'][0]
+                # Round temperatures to one decimal place
+                min_temp = round(float(today_data['min_temp']), 1) if 'min_temp' in today_data else None
+                max_temp = round(float(today_data['max_temp']), 1) if 'max_temp' in today_data else None
+
                 if os.getenv('ENVIRONMENT') != 'production':
-                    logger.info("Current weather data:")
-                    logger.info(current_data)
+                    logger.info(f"Weather data retrieved:")
+                    logger.info(f"Min temperature: {min_temp}°C")
+                    logger.info(f"Max temperature: {max_temp}°C")
 
-                try:
-                    # Get temperature and pressure
-                    temp = current_data.get('temp')
-                    if temp is None:
-                        logger.error("Temperature data missing")
-                        return None, None, None, None
-                    temp = round(float(temp), 1)
-                    
-                    # Get feels like temperature
-                    app_temp = current_data.get('app_temp')
-                    if app_temp is None:
-                        logger.error("Apparent temperature data missing")
-                        return None, None, None, None
-                    app_temp = round(float(app_temp), 1)
-                    
-                    # Get pressure
-                    pressure = current_data.get('pres')
-                    if pressure is None:
-                        logger.error("Pressure data missing")
-                        return None, None, None, None
-                    pressure = round(float(pressure), 1)
-                    
-                    # Get weather description from nested object
-                    weather = current_data.get('weather')
-                    if not weather or not isinstance(weather, dict):
-                        logger.error("Weather object missing or invalid")
-                        logger.error(f"Weather data: {weather}")
-                        return None, None, None, None
-                    
-                    description = weather.get('description')
-                    if description is None:
-                        logger.error("Weather description missing in weather object")
-                        logger.error(f"Weather object: {weather}")
-                        return None, None, None, None
+                # Get pressure data (in mb/hPa)
+                pressure = round(float(today_data['pres'])) if 'pres' in today_data else None
 
-                    if os.getenv('ENVIRONMENT') != 'production':
-                        logger.info("Extracted weather data:")
-                        logger.info(f"Temperature: {temp}°C")
-                        logger.info(f"Feels like: {app_temp}°C")
-                        logger.info(f"Pressure: {pressure} hPa")
-                        logger.info(f"Weather: {description}")
+                if os.getenv('ENVIRONMENT') != 'production':
+                    logger.info(f"Pressure: {pressure} hPa")
 
-                    # All data successfully extracted
-                    return temp, app_temp, pressure, description
-                except Exception as e:
-                    logger.error(f"Error extracting weather data: {str(e)}")
-                    logger.error(f"Current data structure: {current_data}")
-                    return None, None, None, None
+                return min_temp, max_temp, pressure
             else:
                 logger.error("Missing weather data in API response")
-                return None, None, None, None
+                return None, None, None
 
     except httpx.HTTPError as e:
         logger.error(f"HTTP error fetching weather data: {e}")
-        return None, None, None, None
+        return None, None, None
     except (ValueError, TypeError) as e:
         logger.error(f"Error processing weather data: {e}")
-        return None, None, None, None
+        return None, None, None
     except Exception as e:
         logger.error(f"Unexpected error fetching weather data: {e}")
-        return None, None, None, None
+        return None, None, None
 
 def get_sun_times(custom_date: Optional[datetime] = None) -> tuple:
     """
@@ -282,11 +246,11 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         sunrise_time, sunset_time = get_sun_times()
 
         # Get weather data
-        temp, app_temp, pressure, description = await get_weather()
+        min_temp, max_temp, pressure = await get_weather()
 
-        # Format message with location, date, sun times, temperature, pressure, weather description, sunset, and moon phase
+        # Format message with location, date, sun times, temperature, pressure, sunset, and moon phase
         current_date = datetime.now().strftime('%A %d/%m')
-        temp_info = f"Temperature: {temp}°C\nFeels like: {app_temp}°C\nPressure: {pressure} hPa\nWeather: {description}" if temp is not None and app_temp is not None and pressure is not None and description is not None else "Weather data currently unavailable"
+        temp_info = f"Min Temp: {min_temp}°C\nMax Temp: {max_temp}°C\nPressure: {pressure} hPa" if min_temp is not None and max_temp is not None and pressure is not None else "Weather data currently unavailable"
         message = (
             f"Herceg Novi, {current_date}:\n"
             f"Sunrise: {sunrise_time}\n"
