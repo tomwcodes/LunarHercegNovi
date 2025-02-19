@@ -33,16 +33,16 @@ load_dotenv()
 HERCEG_NOVI_LAT = 42.4531
 HERCEG_NOVI_LON = 18.5375
 
-async def get_weather() -> tuple[Optional[float], Optional[float]]:
+async def get_weather() -> tuple[Optional[float], Optional[float], Optional[float]]:
     """
     Get current weather data for Herceg Novi from Weatherbit
-    Returns: tuple(min_temp, max_temp) or (None, None) if error
+    Returns: tuple(min_temp, max_temp, pressure) or (None, None, None) if error
     """
     try:
         api_key = os.getenv('WEATHERBIT_API_KEY')
         if not api_key:
             logger.error("Weatherbit API key not found in environment variables")
-            return None, None
+            return None, None, None
 
         # Add days parameter and specify units as metric
         url = f"https://api.weatherbit.io/v2.0/forecast/daily?lat={HERCEG_NOVI_LAT}&lon={HERCEG_NOVI_LON}&key={api_key}&days=1"
@@ -56,10 +56,10 @@ async def get_weather() -> tuple[Optional[float], Optional[float]]:
             # Check for specific error status codes
             if response.status_code == 403:
                 logger.error("Invalid or expired API key. Please check your Weatherbit API key.")
-                return None, None
+                return None, None, None
             elif response.status_code == 429:
                 logger.error("Too many requests. API rate limit exceeded.")
-                return None, None
+                return None, None, None
 
             response.raise_for_status()
             data = response.json()
@@ -80,20 +80,26 @@ async def get_weather() -> tuple[Optional[float], Optional[float]]:
                     logger.info(f"Min temperature: {min_temp}°C")
                     logger.info(f"Max temperature: {max_temp}°C")
 
-                return min_temp, max_temp
+                # Get pressure data (in mb/hPa)
+                pressure = round(float(today_data['pres']), 1) if 'pres' in today_data else None
+
+                if os.getenv('ENVIRONMENT') != 'production':
+                    logger.info(f"Pressure: {pressure} hPa")
+
+                return min_temp, max_temp, pressure
             else:
                 logger.error("Missing weather data in API response")
-                return None, None
+                return None, None, None
 
     except httpx.HTTPError as e:
         logger.error(f"HTTP error fetching weather data: {e}")
-        return None, None
+        return None, None, None
     except (ValueError, TypeError) as e:
         logger.error(f"Error processing weather data: {e}")
-        return None, None
+        return None, None, None
     except Exception as e:
         logger.error(f"Unexpected error fetching weather data: {e}")
-        return None, None
+        return None, None, None
 
 def get_sun_times(custom_date: Optional[datetime] = None) -> tuple:
     """
@@ -240,11 +246,11 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         sunrise_time, sunset_time = get_sun_times()
 
         # Get weather data
-        min_temp, max_temp = await get_weather()
+        min_temp, max_temp, pressure = await get_weather()
 
-        # Format message with location, date, sun times, temperature, sunset, and moon phase
+        # Format message with location, date, sun times, temperature, pressure, sunset, and moon phase
         current_date = datetime.now().strftime('%A %d/%m')
-        temp_info = f"Min Temp: {min_temp}°C\nMax Temp: {max_temp}°C" if min_temp is not None and max_temp is not None else "Weather data currently unavailable"
+        temp_info = f"Min Temp: {min_temp}°C\nMax Temp: {max_temp}°C\nPressure: {pressure} hPa" if min_temp is not None and max_temp is not None and pressure is not None else "Weather data currently unavailable"
         message = (
             f"Herceg Novi, {current_date}:\n"
             f"Sunrise: {sunrise_time}\n"
