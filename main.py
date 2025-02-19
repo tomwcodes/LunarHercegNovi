@@ -1,13 +1,14 @@
 import os
 import logging
-import ephem
+from typing import Union, Optional
+import ephem  # type: ignore
 from datetime import datetime
-from dotenv import load_dotenv
-from telegram import __version__ as TG_VER, Update
-from telegram.ext import Application, CommandHandler, ContextTypes, CallbackContext
+from dotenv import load_dotenv  # type: ignore
+from telegram import __version__ as TG_VER, Update  # type: ignore
+from telegram.ext import Application, CommandHandler, ContextTypes, CallbackContext  # type: ignore
 
 try:
-    from telegram import __version_info__
+    from telegram import __version_info__  # type: ignore
 except ImportError:
     __version_info__ = (0, 0, 0, 0, 0)  # type: ignore[assignment]
 
@@ -31,13 +32,15 @@ load_dotenv()
 HERCEG_NOVI_LAT = '42.4531'
 HERCEG_NOVI_LON = '18.5375'
 
-def get_moon_phase() -> tuple:
+def get_moon_phase(custom_date: Optional[datetime] = None) -> tuple:
     """
     Calculate the current moon phase for Herceg Novi
+    Args:
+        custom_date: Optional datetime object for testing specific dates
     Returns: tuple(phase_name, emoji)
     """
     try:
-        # Create observer for Herceg Nov
+        # Create observer for Herceg Novi
         observer = ephem.Observer()
         observer.lat = HERCEG_NOVI_LAT
         observer.lon = HERCEG_NOVI_LON
@@ -46,8 +49,8 @@ def get_moon_phase() -> tuple:
         moon = ephem.Moon()
         moon.compute(observer)
 
-        # Get current date for age calculation
-        current_date = ephem.Date(datetime.utcnow())
+        # Use custom_date if provided, otherwise use current UTC time
+        current_date = ephem.Date(custom_date) if custom_date else ephem.Date(datetime.utcnow())
 
         # Calculate previous and next new moons
         previous_new = ephem.previous_new_moon(current_date)
@@ -71,23 +74,22 @@ def get_moon_phase() -> tuple:
             logger.info(f"Phase Percentage: {phase_percent}%")
             logger.info(f"Moon Phase: {moon.phase}")
 
-        # Since we know February 16, 2025 was a full moon (100%),
-        # on February 19 we should be in waning gibbous phase
-        if phase_percent > 85:  # Full moon
+        # Fixed phase percentage ranges for accurate detection
+        if phase_percent >= 97 or phase_percent <= 3:  # Full moon
             return "Full Moon 🌕", "🌕"
-        elif phase_percent > 60:  # After full moon, before last quarter
+        elif phase_percent > 50 and phase_percent < 97:  # Waning Gibbous
             return "Waning Gibbous 🌖", "🌖"
-        elif phase_percent > 40:  # Last quarter
+        elif phase_percent >= 47 and phase_percent <= 53:  # Last Quarter
             return "Last Quarter 🌗", "🌗"
-        elif phase_percent > 15:  # After last quarter, before new moon
+        elif phase_percent > 3 and phase_percent < 47:  # Waning Crescent
             return "Waning Crescent 🌘", "🌘"
-        elif phase_percent <= 15:  # New moon
+        elif phase_percent >= 97 or phase_percent <= 3:  # New moon
             return "New Moon 🌑", "🌑"
-        elif phase_percent <= 35:  # After new moon, before first quarter
+        elif phase_percent > 3 and phase_percent < 47:  # Waxing Crescent
             return "Waxing Crescent 🌒", "🌒"
-        elif phase_percent <= 60:  # First quarter
+        elif phase_percent >= 47 and phase_percent <= 53:  # First Quarter
             return "First Quarter 🌓", "🌓"
-        else:  # After first quarter, before full moon
+        else:  # Waxing Gibbous
             return "Waxing Gibbous 🌔", "🌔"
 
     except Exception as e:
@@ -100,16 +102,14 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         # Log before calculating phase
         logger.info("Received /hi command, calculating moon phase...")
 
+        # Use current date for production
         phase_name, emoji = get_moon_phase()
 
         # Log after calculating phase
         logger.info(f"Calculated phase: {phase_name} {emoji}")
 
-        message = (
-            f"Hello! 👋\n\n"
-            f"Current moon phase in Herceg Novi:\n"
-            f"{phase_name}"
-        )
+        # Format message with just the phase name and emoji
+        message = f"Current moon phase: {phase_name} {emoji}"
 
         await update.message.reply_text(message)
     except Exception as e:
@@ -119,11 +119,33 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             "Please try again later."
         )
 
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle errors in the telegram bot"""
-    logger.error(f"Update {update} caused error {context.error}")
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /start command"""
     try:
-        if update and hasattr(update, 'message'):
+        logger.info("Received /start command, sending welcome message...")
+        message = (
+            f"Hello! 👋\n\n"
+            f"I can provide weather data for Herceg Novi. Just say /hi"
+        )
+        await update.message.reply_text(message)
+    except Exception as e:
+        logger.error(f"Error in start_command: {str(e)}")
+        await update.message.reply_text(
+            "Sorry, I encountered an error while processing your request. "
+            "Please try again later."
+        )
+
+async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle errors in the telegram bot"""
+    # Log the error with update information if available
+    error_message = f"Error: {context.error}"
+    if update:
+        error_message = f"Update {update} caused {error_message}"
+    logger.error(error_message)
+
+    try:
+        # Only attempt to reply if we have a valid update with a message
+        if update is not None and update.message is not None:
             await update.message.reply_text(
                 "Sorry, something went wrong. Please try again later."
             )
@@ -143,6 +165,7 @@ def main() -> None:
         application = Application.builder().token(token).build()
 
         # Add command handlers
+        application.add_handler(CommandHandler("start", start_command))
         application.add_handler(CommandHandler("hi", hi_command))
 
         # Add error handler
