@@ -4,6 +4,7 @@ from typing import Union, Optional
 import ephem  # type: ignore
 from datetime import datetime
 from dotenv import load_dotenv  # type: ignore
+import httpx
 from telegram import __version__ as TG_VER, Update  # type: ignore
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackContext  # type: ignore
 
@@ -31,6 +32,31 @@ load_dotenv()
 # Herceg Novi coordinates
 HERCEG_NOVI_LAT = 42.4531
 HERCEG_NOVI_LON = 18.5375
+
+async def get_weather() -> tuple[float, float]:
+    """
+    Get current weather data for Herceg Novi from Open Meteo
+    Returns: tuple(min_temp, max_temp)
+    """
+    try:
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={HERCEG_NOVI_LAT}&longitude={HERCEG_NOVI_LON}&daily=temperature_2m_max,temperature_2m_min&timezone=auto"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Get today's max and min temperature
+            max_temp = data['daily']['temperature_2m_max'][0]
+            min_temp = data['daily']['temperature_2m_min'][0]
+            
+            if os.getenv('ENVIRONMENT') != 'production':
+                logger.info(f"Weather data retrieved - Max: {max_temp}°C, Min: {min_temp}°C")
+                
+            return min_temp, max_temp
+    except Exception as e:
+        logger.error(f"Error fetching weather data: {str(e)}")
+        return None, None
 
 def get_sun_times(custom_date: Optional[datetime] = None) -> tuple:
     """
@@ -176,11 +202,16 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         # Get sunrise and sunset times
         sunrise_time, sunset_time = get_sun_times()
 
-        # Format message with phase and sun times
+        # Get weather data
+        min_temp, max_temp = await get_weather()
+        
+        # Format message with phase, sun times, and temperature
+        temp_info = f"\nTemperature: {min_temp}°C to {max_temp}°C" if min_temp is not None and max_temp is not None else ""
         message = (
             f"Current moon phase: {phase_name} {emoji}\n"
             f"Sunrise: {sunrise_time}\n"
             f"Sunset: {sunset_time}"
+            f"{temp_info}"
         )
 
         await update.message.reply_text(message)
