@@ -46,12 +46,20 @@ async def get_weather() -> tuple[float, float]:
             response.raise_for_status()
             data = response.json()
             
+            # Log the raw API response in non-production
+            if os.getenv('ENVIRONMENT') != 'production':
+                logger.info(f"Raw weather API response: {data}")
+            
             # Get today's max and min temperature
-            max_temp = data['daily']['temperature_2m_max'][0]
-            min_temp = data['daily']['temperature_2m_min'][0]
+            # Extract temperature values
+            max_temp = float(data['daily']['temperature_2m_max'][0])
+            min_temp = float(data['daily']['temperature_2m_min'][0])
             
             if os.getenv('ENVIRONMENT') != 'production':
-                logger.info(f"Weather data retrieved - Max: {max_temp}°C, Min: {min_temp}°C")
+                logger.info(f"Weather data retrieved:")
+                logger.info(f"Max temperature array: {data['daily']['temperature_2m_max']}")
+                logger.info(f"Min temperature array: {data['daily']['temperature_2m_min']}")
+                logger.info(f"Selected values - Max: {max_temp}°C, Min: {min_temp}°C")
                 
             return min_temp, max_temp
     except Exception as e:
@@ -206,7 +214,7 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         min_temp, max_temp = await get_weather()
         
         # Format message with phase, sun times, and temperature
-        temp_info = f"\nTemperature: {min_temp}°C to {max_temp}°C" if min_temp is not None and max_temp is not None else ""
+        temp_info = f"\nDaily Temperature Range:\nMin: {min_temp}°C\nMax: {max_temp}°C" if min_temp is not None and max_temp is not None else ""
         message = (
             f"Current moon phase: {phase_name} {emoji}\n"
             f"Sunrise: {sunrise_time}\n"
