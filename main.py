@@ -45,30 +45,55 @@ def get_sun_times(custom_date: Optional[datetime] = None) -> tuple:
         observer.lat = str(HERCEG_NOVI_LAT)  # ephem expects string in degrees
         observer.lon = str(HERCEG_NOVI_LON)
         observer.elevation = 10  # meters above sea level
-        
-        # Use custom_date if provided, otherwise use current UTC time
-        if custom_date:
-            observer.date = ephem.Date(custom_date)
-        else:
-            observer.date = ephem.Date(datetime.utcnow())
+        observer.pressure = 0  # disable refraction calculation
+        observer.horizon = '-0:34'  # standard altitude of the sun's center when it rises/sets
+
+        # Set the date
+        now = custom_date if custom_date else datetime.utcnow()
+        observer.date = ephem.Date(now)
+
+        # Log settings in non-production environment
+        if os.getenv('ENVIRONMENT') != 'production':
+            logger.info(f"Sun Times Calculation:")
+            logger.info(f"Observer lat: {observer.lat}")
+            logger.info(f"Observer lon: {observer.lon}")
+            logger.info(f"Observer elevation: {observer.elevation}")
+            logger.info(f"Current Date (UTC): {now}")
 
         # Calculate sun rise/set times
         sun = ephem.Sun()
-        sunrise = observer.next_rising(sun)
-        sunset = observer.next_setting(sun)
+        sun.compute(observer)
+        try:
+            # Get next rising and setting times
+            next_rising = observer.next_rising(sun)
+            next_setting = observer.next_setting(sun)
+            
+            if os.getenv('ENVIRONMENT') != 'production':
+                logger.info(f"Raw next rising: {next_rising}")
+                logger.info(f"Raw next setting: {next_setting}")
 
-        # Convert to local time (UTC+1)
-        sunrise_local = ephem.Date(sunrise).datetime() + ephem.hours(1)
-        sunset_local = ephem.Date(sunset).datetime() + ephem.hours(1)
+            # Convert ephem.Date to Python datetime and add UTC+1 offset
+            from datetime import timedelta
+            sunrise_local = ephem.Date(next_rising).datetime() + timedelta(hours=1)
+            sunset_local = ephem.Date(next_setting).datetime() + timedelta(hours=1)
+        except ephem.CircumpolarError:
+            logger.error("Sun is circumpolar at this location and date")
+            return "No sunrise", "No sunset"
 
         # Format times as strings
         sunrise_str = sunrise_local.strftime('%H:%M')
         sunset_str = sunset_local.strftime('%H:%M')
 
+        if os.getenv('ENVIRONMENT') != 'production':
+            logger.info(f"Formatted sunrise: {sunrise_str}")
+            logger.info(f"Formatted sunset: {sunset_str}")
+
         return sunrise_str, sunset_str
 
     except Exception as e:
         logger.error(f"Error calculating sun times: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error details: {str(e)}")
         return "Unknown", "Unknown"
 
 def get_moon_phase(custom_date: Optional[datetime] = None) -> tuple:
