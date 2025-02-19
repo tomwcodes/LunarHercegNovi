@@ -250,13 +250,13 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
         # Format message with location, date, sun times, temperature, pressure, sunset, and moon phase
         current_date = datetime.now().strftime('%A %d/%m')
-        temp_info = f"Min Temp: {min_temp}°C\nMax Temp: {max_temp}°C\nPressure: {pressure} hPa" if min_temp is not None and max_temp is not None and pressure is not None else "Weather data currently unavailable"
+        temp_info = f"❄️ Min Temp: {min_temp}°C\n☀️ Max Temp: {max_temp}°C\n📏 Pressure: {pressure} hPa" if min_temp is not None and max_temp is not None and pressure is not None else "Weather data currently unavailable"
         message = (
-            f"Herceg Novi, {current_date}:\n"
-            f"Sunrise: {sunrise_time}\n"
+            f"🌍 Herceg Novi, {current_date}:\n"
+            f"🌅 Sunrise: {sunrise_time}\n"
             f"{temp_info}\n"
-            f"Sunset: {sunset_time}\n"
-            f"Moon Phase: {phase_name} {emoji}"
+            f"🌇 Sunset: {sunset_time}\n"
+            f"{emoji} Moon Phase: {phase_name}"
         )
 
         await update.message.reply_text(message)
