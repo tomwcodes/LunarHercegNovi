@@ -178,9 +178,9 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
         # Format message with phase and sun times
         message = (
+            f"Current moon phase: {phase_name} {emoji}\n"
             f"Sunrise: {sunrise_time}\n"
             f"Sunset: {sunset_time}"
-            f"Moon Phase: {phase_name} {emoji}\n"
         )
 
         await update.message.reply_text(message)
