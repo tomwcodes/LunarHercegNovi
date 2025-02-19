@@ -33,37 +33,52 @@ load_dotenv()
 HERCEG_NOVI_LAT = 42.4531
 HERCEG_NOVI_LON = 18.5375
 
-async def get_weather() -> tuple[float, float]:
+async def get_weather() -> tuple[Optional[float], Optional[float]]:
     """
     Get current weather data for Herceg Novi from Open Meteo
-    Returns: tuple(min_temp, max_temp)
+    Returns: tuple(min_temp, max_temp) or (None, None) if error
     """
     try:
         url = f"https://api.open-meteo.com/v1/forecast?latitude={HERCEG_NOVI_LAT}&longitude={HERCEG_NOVI_LON}&daily=temperature_2m_max,temperature_2m_min&timezone=auto"
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.get(url)
-            response.raise_for_status()
+            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
             data = response.json()
-            
-            # Log the raw API response in non-production
+
             if os.getenv('ENVIRONMENT') != 'production':
                 logger.info(f"Raw weather API response: {data}")
-            
-            # Get today's max and min temperature
-            # Extract temperature values
-            max_temp = float(data['daily']['temperature_2m_max'][0])
-            min_temp = float(data['daily']['temperature_2m_min'][0])
-            
-            if os.getenv('ENVIRONMENT') != 'production':
-                logger.info(f"Weather data retrieved:")
-                logger.info(f"Max temperature array: {data['daily']['temperature_2m_max']}")
-                logger.info(f"Min temperature array: {data['daily']['temperature_2m_min']}")
-                logger.info(f"Selected values - Max: {max_temp}°C, Min: {min_temp}°C")
-                
-            return min_temp, max_temp
-    except Exception as e:
-        logger.error(f"Error fetching weather data: {str(e)}")
+
+            # *************************************************************************
+            # Improved data handling: Check for data and handle missing values gracefully
+            # *************************************************************************
+            daily_data = data.get('daily')  # Use .get() to avoid KeyError if 'daily' is missing
+            if daily_data:
+                max_temp_data = daily_data.get('temperature_2m_max')
+                min_temp_data = daily_data.get('temperature_2m_min')
+
+                max_temp = float(max_temp_data[0]) if max_temp_data and len(max_temp_data) > 0 and max_temp_data[0] is not None else None
+                min_temp = float(min_temp_data[0]) if min_temp_data and len(min_temp_data) > 0 and min_temp_data[0] is not None else None
+
+                if os.getenv('ENVIRONMENT') != 'production':
+                    logger.info(f"Weather data retrieved:")
+                    logger.info(f"Max temperature array: {max_temp_data}")
+                    logger.info(f"Min temperature array: {min_temp_data}")
+                    logger.info(f"Selected values - Max: {max_temp}°C, Min: {min_temp}°C")
+
+                return min_temp, max_temp
+            else:
+                logger.error("Missing 'daily' data in weather API response.")
+                return None, None
+
+    except httpx.HTTPError as e:  # Catch HTTP errors
+        logger.error(f"HTTP error fetching weather data: {e}")
+        return None, None
+    except (ValueError, TypeError) as e:  # Catch type errors during float conversion
+        logger.error(f"Error processing weather data: {e}")
+        return None, None
+    except Exception as e:  # Catch other potential errors
+        logger.error(f"Unexpected error fetching weather data: {e}")
         return None, None
 
 def get_sun_times(custom_date: Optional[datetime] = None) -> tuple:
