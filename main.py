@@ -17,10 +17,10 @@ if __version_info__ < (20, 0, 0, "alpha", 1):
         f"20.x version of this example, visit https://docs.python-telegram-bot.org/en/v20.7/examples.html"
     )
 
-# Configure logging
+# Configure logging with more detailed format for production
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.INFO if os.getenv('ENVIRONMENT') != 'production' else logging.WARNING
 )
 logger = logging.getLogger(__name__)
 
@@ -60,15 +60,16 @@ def get_moon_phase() -> tuple:
         # Calculate phase percentage (0-100)
         phase_percent = (moon_age / moon_cycle) * 100
 
-        # Log diagnostic information
-        logger.info(f"Moon Phase Calculation:")
-        logger.info(f"Current Date (UTC): {ephem.Date(current_date).datetime()}")
-        logger.info(f"Previous New Moon: {ephem.Date(previous_new).datetime()}")
-        logger.info(f"Next New Moon: {ephem.Date(next_new).datetime()}")
-        logger.info(f"Moon Age (days): {moon_age * 29.53}")  # Convert to days
-        logger.info(f"Moon Cycle (days): {moon_cycle * 29.53}")  # Convert to days
-        logger.info(f"Phase Percentage: {phase_percent}%")
-        logger.info(f"Moon Phase: {moon.phase}")
+        # Log phase calculation details in non-production environment
+        if os.getenv('ENVIRONMENT') != 'production':
+            logger.info(f"Moon Phase Calculation:")
+            logger.info(f"Current Date (UTC): {ephem.Date(current_date).datetime()}")
+            logger.info(f"Previous New Moon: {ephem.Date(previous_new).datetime()}")
+            logger.info(f"Next New Moon: {ephem.Date(next_new).datetime()}")
+            logger.info(f"Moon Age (days): {moon_age * 29.53}")
+            logger.info(f"Moon Cycle (days): {moon_cycle * 29.53}")
+            logger.info(f"Phase Percentage: {phase_percent}%")
+            logger.info(f"Moon Phase: {moon.phase}")
 
         # Since we know February 16, 2025 was a full moon (100%),
         # on February 19 we should be in waning gibbous phase
@@ -100,7 +101,6 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         logger.info("Received /hi command, calculating moon phase...")
 
         phase_name, emoji = get_moon_phase()
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # Log after calculating phase
         logger.info(f"Calculated phase: {phase_name} {emoji}")
@@ -108,9 +108,7 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         message = (
             f"Hello! 👋\n\n"
             f"Current moon phase in Herceg Novi:\n"
-            f"{phase_name}\n\n"
-            f"Time: {current_time}\n"
-            f"Location: Herceg Novi, Montenegro"
+            f"{phase_name}"
         )
 
         await update.message.reply_text(message)
@@ -137,8 +135,8 @@ def main() -> None:
     # Get the token from environment variable
     token = os.getenv('TELEGRAM_BOT_TOKEN')
     if not token:
-        logger.error("No token found! Make sure to set TELEGRAM_BOT_TOKEN environment variable.")
-        return
+        logger.critical("No token found! Make sure to set TELEGRAM_BOT_TOKEN environment variable.")
+        raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
 
     try:
         # Create application
@@ -154,7 +152,8 @@ def main() -> None:
         logger.info("Starting bot...")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
     except Exception as e:
-        logger.error(f"Error starting bot: {str(e)}")
+        logger.critical(f"Error starting bot: {str(e)}")
+        raise
 
 if __name__ == '__main__':
     main()
