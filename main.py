@@ -76,21 +76,21 @@ def get_moon_phase(custom_date: Optional[datetime] = None) -> tuple:
 
         # Fixed phase percentage ranges for accurate detection
         if phase_percent >= 97 or phase_percent <= 3:  # Full moon
-            return "Full Moon 🌕", "🌕"
+            return "Full Moon", "🌕"
         elif phase_percent > 50 and phase_percent < 97:  # Waning Gibbous
-            return "Waning Gibbous 🌖", "🌖"
+            return "Waning Gibbous", "🌖"
         elif phase_percent >= 47 and phase_percent <= 53:  # Last Quarter
-            return "Last Quarter 🌗", "🌗"
+            return "Last Quarter", "🌗"
         elif phase_percent > 3 and phase_percent < 47:  # Waning Crescent
-            return "Waning Crescent 🌘", "🌘"
+            return "Waning Crescent", "🌘"
         elif phase_percent >= 97 or phase_percent <= 3:  # New moon
-            return "New Moon 🌑", "🌑"
+            return "New Moon", "🌑"
         elif phase_percent > 3 and phase_percent < 47:  # Waxing Crescent
-            return "Waxing Crescent 🌒", "🌒"
+            return "Waxing Crescent", "🌒"
         elif phase_percent >= 47 and phase_percent <= 53:  # First Quarter
-            return "First Quarter 🌓", "🌓"
+            return "First Quarter", "🌓"
         else:  # Waxing Gibbous
-            return "Waxing Gibbous 🌔", "🌔"
+            return "Waxing Gibbous", "🌔"
 
     except Exception as e:
         logger.error(f"Error calculating moon phase: {str(e)}")
