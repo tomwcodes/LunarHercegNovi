@@ -3,7 +3,6 @@ import logging
 from typing import Union, Optional
 import ephem  # type: ignore
 from datetime import datetime
-import requests
 from dotenv import load_dotenv  # type: ignore
 from telegram import __version__ as TG_VER, Update  # type: ignore
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackContext  # type: ignore
@@ -68,7 +67,7 @@ def get_sun_times(custom_date: Optional[datetime] = None) -> tuple:
             # Get next rising and setting times
             next_rising = observer.next_rising(sun)
             next_setting = observer.next_setting(sun)
-
+            
             if os.getenv('ENVIRONMENT') != 'production':
                 logger.info(f"Raw next rising: {next_rising}")
                 logger.info(f"Raw next setting: {next_setting}")
@@ -162,70 +161,6 @@ def get_moon_phase(custom_date: Optional[datetime] = None) -> tuple:
         logger.error(f"Error calculating moon phase: {str(e)}")
         return "Unable to calculate moon phase", "❓"
 
-def get_temperature_data() -> tuple:
-    """
-    Get min and max temperature for Herceg Novi from Open-Meteo
-    Returns: tuple(min_temp, max_temp)
-    """
-    response = None  # Initialize response variable
-    try:
-        # Open-Meteo API endpoint for Herceg Novi with daily temperature data
-        url = (
-            f"https://api.open-meteo.com/v1/forecast"
-            f"?latitude={HERCEG_NOVI_LAT}"
-            f"&longitude={HERCEG_NOVI_LON}"
-            f"&daily=temperature_2m_max,temperature_2m_min"
-            f"&current_weather=true"
-            f"&forecast_days=1"
-            f"&timezone=Europe/Podgorica"
-        )
-
-        logger.info(f"Fetching temperature data from: {url}")
-        response = requests.get(url)
-
-        logger.info(f"API Response status code: {response.status_code}")
-        if response.status_code == 200:
-            # Log raw response content
-            logger.info(f"Raw API Response: {response.text}")
-
-            data = response.json()
-
-            # Log complete daily temperature data for debugging
-            logger.info("Complete daily temperature data:")
-            if 'daily' in data:
-                logger.info(f"Timezone: {data.get('timezone', 'not specified')}")
-                logger.info(f"Time: {data['daily'].get('time', [])}")
-                logger.info(f"Min temps: {data['daily'].get('temperature_2m_min', [])}")
-                logger.info(f"Max temps: {data['daily'].get('temperature_2m_max', [])}")
-
-            if 'current_weather' in data:
-                logger.info(f"Current weather temperature: {data['current_weather'].get('temperature')}°C")
-
-            # Explicitly check if daily data exists and has the required fields
-            if 'daily' in data and 'temperature_2m_min' in data['daily'] and 'temperature_2m_max' in data['daily']:
-                # Get today's (index 0) min and max temperature
-                min_temp = round(data['daily']['temperature_2m_min'][0], 1)
-                max_temp = round(data['daily']['temperature_2m_max'][0], 1)
-
-                logger.info(f"Selected daily temperatures - Min: {min_temp}°C, Max: {max_temp}°C")
-                return f"{min_temp}°C", f"{max_temp}°C"
-            else:
-                logger.error("Missing required daily temperature fields in API response")
-                return "N/A", "N/A"
-        else:
-            logger.error(f"Error fetching temperature data: {response.status_code}")
-            return "N/A", "N/A"
-
-    except Exception as e:
-        logger.error(f"Error getting temperature data: {str(e)}")
-        logger.error(f"Error type: {type(e).__name__}")
-        if response is not None:
-            try:
-                logger.error(f"Response content: {response.text}")
-            except Exception:
-                logger.error("Could not access response content")
-        return "N/A", "N/A"
-
 async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /hi command"""
     try:
@@ -235,19 +170,17 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         # Use current date for production
         phase_name, emoji = get_moon_phase()
 
+        # Log after calculating phase
+        logger.info(f"Calculated phase: {phase_name} {emoji}")
+
         # Get sunrise and sunset times
         sunrise_time, sunset_time = get_sun_times()
 
-        # Get temperature data
-        min_temp, max_temp = get_temperature_data()
-
-        # Format message with phase, sun times, and temperatures
+        # Format message with phase and sun times
         message = (
             f"Current moon phase: {phase_name} {emoji}\n"
             f"Sunrise: {sunrise_time}\n"
-            f"Sunset: {sunset_time}\n"
-            f"Min Temp: {min_temp}\n"
-            f"Max Temp: {max_temp}"
+            f"Sunset: {sunset_time}"
         )
 
         await update.message.reply_text(message)
