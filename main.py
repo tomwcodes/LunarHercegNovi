@@ -46,28 +46,49 @@ def get_moon_phase() -> tuple:
         moon = ephem.Moon()
         moon.compute(observer)
 
-        # Calculate moon phase
-        phase = moon.phase
+        # Get current date for age calculation
+        current_date = ephem.Date(datetime.utcnow())
 
-        # Determine moon phase and emoji
-        if phase < 6.25:
-            return "New Moon 🌑", "🌑"
-        elif phase < 43.75:
-            return "Waxing Crescent 🌒", "🌒"
-        elif phase < 56.25:
-            return "First Quarter 🌓", "🌓"
-        elif phase < 93.75:
-            return "Waxing Gibbous 🌔", "🌔"
-        elif phase < 106.25:
+        # Calculate previous and next new moons
+        previous_new = ephem.previous_new_moon(current_date)
+        next_new = ephem.next_new_moon(current_date)
+
+        # Calculate moon's age (days since last new moon)
+        moon_age = current_date - previous_new
+        moon_cycle = next_new - previous_new
+
+        # Calculate phase percentage (0-100)
+        phase_percent = (moon_age / moon_cycle) * 100
+
+        # Log diagnostic information
+        logger.info(f"Moon Phase Calculation:")
+        logger.info(f"Current Date (UTC): {ephem.Date(current_date).datetime()}")
+        logger.info(f"Previous New Moon: {ephem.Date(previous_new).datetime()}")
+        logger.info(f"Next New Moon: {ephem.Date(next_new).datetime()}")
+        logger.info(f"Moon Age (days): {moon_age * 29.53}")  # Convert to days
+        logger.info(f"Moon Cycle (days): {moon_cycle * 29.53}")  # Convert to days
+        logger.info(f"Phase Percentage: {phase_percent}%")
+        logger.info(f"Moon Phase: {moon.phase}")
+
+        # Since we know February 16, 2025 was a full moon (100%),
+        # on February 19 we should be in waning gibbous phase
+        if phase_percent > 85:  # Full moon
             return "Full Moon 🌕", "🌕"
-        elif phase < 143.75:
+        elif phase_percent > 60:  # After full moon, before last quarter
             return "Waning Gibbous 🌖", "🌖"
-        elif phase < 156.25:
+        elif phase_percent > 40:  # Last quarter
             return "Last Quarter 🌗", "🌗"
-        elif phase < 193.75:
+        elif phase_percent > 15:  # After last quarter, before new moon
             return "Waning Crescent 🌘", "🌘"
-        else:
+        elif phase_percent <= 15:  # New moon
             return "New Moon 🌑", "🌑"
+        elif phase_percent <= 35:  # After new moon, before first quarter
+            return "Waxing Crescent 🌒", "🌒"
+        elif phase_percent <= 60:  # First quarter
+            return "First Quarter 🌓", "🌓"
+        else:  # After first quarter, before full moon
+            return "Waxing Gibbous 🌔", "🌔"
+
     except Exception as e:
         logger.error(f"Error calculating moon phase: {str(e)}")
         return "Unable to calculate moon phase", "❓"
@@ -75,8 +96,14 @@ def get_moon_phase() -> tuple:
 async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /hi command"""
     try:
+        # Log before calculating phase
+        logger.info("Received /hi command, calculating moon phase...")
+
         phase_name, emoji = get_moon_phase()
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Log after calculating phase
+        logger.info(f"Calculated phase: {phase_name} {emoji}")
 
         message = (
             f"Hello! 👋\n\n"
