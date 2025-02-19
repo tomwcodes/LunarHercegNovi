@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Herceg Novi coordinates
-HERCEG_NOVI_LAT = '42.4531'
-HERCEG_NOVI_LON = '18.5375'
+HERCEG_NOVI_LAT = 42.4531
+HERCEG_NOVI_LON = 18.5375
 
 def get_sun_times(custom_date: Optional[datetime] = None) -> tuple:
     """
@@ -42,8 +42,9 @@ def get_sun_times(custom_date: Optional[datetime] = None) -> tuple:
     try:
         # Create observer for Herceg Novi
         observer = ephem.Observer()
-        observer.lat = HERCEG_NOVI_LAT
-        observer.lon = HERCEG_NOVI_LON
+        observer.lat = str(HERCEG_NOVI_LAT)  # ephem expects string in degrees
+        observer.lon = str(HERCEG_NOVI_LON)
+        observer.elevation = 10  # meters above sea level
         
         # Use custom_date if provided, otherwise use current UTC time
         if custom_date:
@@ -80,8 +81,9 @@ def get_moon_phase(custom_date: Optional[datetime] = None) -> tuple:
     try:
         # Create observer for Herceg Novi
         observer = ephem.Observer()
-        observer.lat = HERCEG_NOVI_LAT
-        observer.lon = HERCEG_NOVI_LON
+        observer.lat = str(HERCEG_NOVI_LAT)  # ephem expects string in degrees
+        observer.lon = str(HERCEG_NOVI_LON)
+        observer.elevation = 10  # meters above sea level
 
         # Get current moon information
         moon = ephem.Moon()
