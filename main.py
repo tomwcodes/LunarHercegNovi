@@ -81,7 +81,7 @@ async def get_weather() -> tuple[Optional[float], Optional[float], Optional[floa
                     logger.info(f"Max temperature: {max_temp}°C")
 
                 # Get pressure data (in mb/hPa)
-                pressure = round(float(today_data['pres']), 1) if 'pres' in today_data else None
+                pressure = round(float(today_data['pres'])) if 'pres' in today_data else None
 
                 if os.getenv('ENVIRONMENT') != 'production':
                     logger.info(f"Pressure: {pressure} hPa")
