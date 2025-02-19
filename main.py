@@ -32,6 +32,44 @@ load_dotenv()
 HERCEG_NOVI_LAT = '42.4531'
 HERCEG_NOVI_LON = '18.5375'
 
+def get_sun_times(custom_date: Optional[datetime] = None) -> tuple:
+    """
+    Calculate sunrise and sunset times for Herceg Novi
+    Args:
+        custom_date: Optional datetime object for testing specific dates
+    Returns: tuple(sunrise_time, sunset_time)
+    """
+    try:
+        # Create observer for Herceg Novi
+        observer = ephem.Observer()
+        observer.lat = HERCEG_NOVI_LAT
+        observer.lon = HERCEG_NOVI_LON
+        
+        # Use custom_date if provided, otherwise use current UTC time
+        if custom_date:
+            observer.date = ephem.Date(custom_date)
+        else:
+            observer.date = ephem.Date(datetime.utcnow())
+
+        # Calculate sun rise/set times
+        sun = ephem.Sun()
+        sunrise = observer.next_rising(sun)
+        sunset = observer.next_setting(sun)
+
+        # Convert to local time (UTC+1)
+        sunrise_local = ephem.Date(sunrise).datetime() + ephem.hours(1)
+        sunset_local = ephem.Date(sunset).datetime() + ephem.hours(1)
+
+        # Format times as strings
+        sunrise_str = sunrise_local.strftime('%H:%M')
+        sunset_str = sunset_local.strftime('%H:%M')
+
+        return sunrise_str, sunset_str
+
+    except Exception as e:
+        logger.error(f"Error calculating sun times: {str(e)}")
+        return "Unknown", "Unknown"
+
 def get_moon_phase(custom_date: Optional[datetime] = None) -> tuple:
     """
     Calculate the current moon phase for Herceg Novi
@@ -108,8 +146,15 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         # Log after calculating phase
         logger.info(f"Calculated phase: {phase_name} {emoji}")
 
-        # Format message with just the phase name and emoji
-        message = f"Current moon phase: {phase_name} {emoji}"
+        # Get sunrise and sunset times
+        sunrise_time, sunset_time = get_sun_times()
+
+        # Format message with phase and sun times
+        message = (
+            f"Current moon phase: {phase_name} {emoji}\n"
+            f"Sunrise: {sunrise_time}\n"
+            f"Sunset: {sunset_time}"
+        )
 
         await update.message.reply_text(message)
     except Exception as e:
