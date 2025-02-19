@@ -243,7 +243,7 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         min_temp, max_temp = await get_weather()
 
         # Format message with phase, sun times, and temperature
-        temp_info = f"\nDaily Temperature Range:\nMin: {min_temp}°C\nMax: {max_temp}°C" if min_temp is not None and max_temp is not None else "\nWeather data currently unavailable"
+        temp_info = f"\nMin Temp: {min_temp}°C\nMax Temp: {max_temp}°C" if min_temp is not None and max_temp is not None else "\nWeather data currently unavailable"
         message = (
             f"Current moon phase: {phase_name} {emoji}\n"
             f"Sunrise: {sunrise_time}\n"
