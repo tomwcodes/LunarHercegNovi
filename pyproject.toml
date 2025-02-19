@@ -5,7 +5,9 @@ description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
     "ephem>=4.2",
+    "httpx>=0.25.2",
     "python-dotenv>=1.0.1",
     "python-telegram-bot==20.7",
     "telegram>=0.0.1",
+    "twilio>=9.4.5",
 ]
