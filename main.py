@@ -11,6 +11,7 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     ContextTypes,
+    CallbackContext,
     filters
 )  # type: ignore
 
@@ -25,7 +26,7 @@ if __version_info__ < (20, 0, 0, "alpha", 1):
         f"20.x version of this example, visit https://docs.python-telegram-bot.org/en/v20.7/examples.html"
     )
 
-# Configure logging
+# Configure logging with more detailed format for production
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO if os.getenv('ENVIRONMENT') != 'production' else logging.WARNING
@@ -39,26 +40,19 @@ load_dotenv()
 HERCEG_NOVI_LAT = 42.4531
 HERCEG_NOVI_LON = 18.5375
 
-async def get_weather(city: Optional[str] = None) -> tuple[
-    Optional[float],
-    Optional[float],
-    Optional[float],
-    Optional[str],
-    Optional[float],
-    Optional[float]
-]:
+async def get_weather(city: Optional[str] = None) -> tuple[Optional[float], Optional[float], Optional[float], Optional[str]]:
     """
-    Get current weather forecast from Weatherbit.
-    If a city is provided, it queries by city name; otherwise, it uses default coordinates.
-    Returns a tuple:
-      (min_temp, max_temp, pressure, weather_description, city_lat, city_lon)
-    or (None, None, None, None, None, None) if an error occurs.
+    Get current weather data from Weatherbit.
+    If a city is provided, retrieve forecast using the city name.
+    Otherwise, use default coordinates (Herceg Novi).
+    Returns: tuple(min_temp, max_temp, pressure, weather_description)
+             or (None, None, None, None) if an error occurs.
     """
     try:
         api_key = os.getenv('WEATHERBIT_API_KEY')
         if not api_key:
             logger.error("Weatherbit API key not found in environment variables")
-            return None, None, None, None, None, None
+            return None, None, None, None
 
         if city:
             url = f"https://api.weatherbit.io/v2.0/forecast/daily?city={city}&key={api_key}&days=1"
@@ -77,10 +71,10 @@ async def get_weather(city: Optional[str] = None) -> tuple[
 
             if response.status_code == 403:
                 logger.error("Invalid or expired API key. Please check your Weatherbit API key.")
-                return None, None, None, None, None, None
+                return None, None, None, None
             elif response.status_code == 429:
                 logger.error("Too many requests. API rate limit exceeded.")
-                return None, None, None, None, None, None
+                return None, None, None, None
 
             response.raise_for_status()
             data = response.json()
@@ -94,43 +88,42 @@ async def get_weather(city: Optional[str] = None) -> tuple[
                 min_temp = round(float(today_data['min_temp']), 1) if 'min_temp' in today_data else None
                 max_temp = round(float(today_data['max_temp']), 1) if 'max_temp' in today_data else None
                 pressure = round(float(today_data['pres'])) if 'pres' in today_data else None
-                weather_description = today_data.get('weather', {}).get('description')
-
-                # Extract the city coordinates from the top-level response (if available)
-                city_lat = data.get('lat')
-                city_lon = data.get('lon')
 
                 if os.getenv('ENVIRONMENT') != 'production':
-                    logger.info(f"Weather data: Min {min_temp}°C, Max {max_temp}°C, Pressure {pressure} hPa")
+                    logger.info(f"Weather data retrieved: Min {min_temp}°C, Max {max_temp}°C, Pressure {pressure} hPa")
+                
+                weather_description = today_data.get('weather', {}).get('description')
+                if os.getenv('ENVIRONMENT') != 'production':
                     logger.info(f"Weather description: {weather_description}")
-                    logger.info(f"Coordinates: lat={city_lat}, lon={city_lon}")
 
-                return min_temp, max_temp, pressure, weather_description, city_lat, city_lon
+                return min_temp, max_temp, pressure, weather_description
             else:
                 logger.error("Missing weather data in API response")
-                return None, None, None, None, None, None
+                return None, None, None, None
 
     except httpx.HTTPError as e:
         logger.error(f"HTTP error fetching weather data: {e}")
-        return None, None, None, None, None, None
+        return None, None, None, None
     except (ValueError, TypeError) as e:
         logger.error(f"Error processing weather data: {e}")
-        return None, None, None, None, None, None
+        return None, None, None, None
     except Exception as e:
         logger.error(f"Unexpected error fetching weather data: {e}")
-        return None, None, None, None, None, None
+        return None, None, None, None
 
-def get_sun_times(lat: float, lon: float, custom_date: Optional[datetime] = None) -> tuple:
+def get_sun_times(custom_date: Optional[datetime] = None) -> tuple:
     """
-    Calculate sunrise and sunset times for a given latitude and longitude.
-    Returns a tuple: (sunrise_time, sunset_time)
+    Calculate sunrise and sunset times for Herceg Novi.
+    Args:
+        custom_date: Optional datetime object for testing specific dates
+    Returns: tuple(sunrise_time, sunset_time)
     """
     try:
         observer = ephem.Observer()
-        observer.lat = str(lat)
-        observer.lon = str(lon)
-        observer.elevation = 10  # assuming an elevation of 10m; adjust if needed
-        observer.pressure = 0    # disable refraction calculation
+        observer.lat = str(HERCEG_NOVI_LAT)
+        observer.lon = str(HERCEG_NOVI_LON)
+        observer.elevation = 10
+        observer.pressure = 0
         observer.horizon = '-0:34'
         now = custom_date if custom_date else datetime.utcnow()
         observer.date = ephem.Date(now)
@@ -162,17 +155,62 @@ def get_sun_times(lat: float, lon: float, custom_date: Optional[datetime] = None
         logger.error(f"Error calculating sun times: {str(e)}")
         return "Unknown", "Unknown"
 
-async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /hi command for the default location (Herceg Novi)."""
+def get_moon_phase(custom_date: Optional[datetime] = None) -> tuple:
+    """
+    Calculate the current moon phase for Herceg Novi.
+    Args:
+        custom_date: Optional datetime object for testing specific dates
+    Returns: tuple(phase_name, emoji)
+    """
     try:
-        logger.info("Received /hi command, calculating moon phase and weather...")
-        # Get moon phase for default location
+        observer = ephem.Observer()
+        observer.lat = str(HERCEG_NOVI_LAT)
+        observer.lon = str(HERCEG_NOVI_LON)
+        observer.elevation = 10
+
+        moon = ephem.Moon()
+        moon.compute(observer)
+        current_date = ephem.Date(custom_date) if custom_date else ephem.Date(datetime.utcnow())
+        previous_new = ephem.previous_new_moon(current_date)
+        next_new = ephem.next_new_moon(current_date)
+        moon_age = current_date - previous_new
+        moon_cycle = next_new - previous_new
+        phase_percent = (moon_age / moon_cycle) * 100
+
+        if os.getenv('ENVIRONMENT') != 'production':
+            logger.info(f"Moon Phase Calculation: current_date={ephem.Date(current_date).datetime()}, "
+                        f"previous_new={ephem.Date(previous_new).datetime()}, next_new={ephem.Date(next_new).datetime()}, "
+                        f"phase_percent={phase_percent}%")
+
+        if phase_percent >= 97 or phase_percent <= 3:
+            return "Full Moon", "🌕"
+        elif phase_percent > 50 and phase_percent < 97:
+            return "Waning Gibbous", "🌖"
+        elif phase_percent >= 47 and phase_percent <= 53:
+            return "Last Quarter", "🌗"
+        elif phase_percent > 3 and phase_percent < 47:
+            return "Waning Crescent", "🌘"
+        elif phase_percent >= 97 or phase_percent <= 3:
+            return "New Moon", "🌑"
+        elif phase_percent > 3 and phase_percent < 47:
+            return "Waxing Crescent", "🌒"
+        elif phase_percent >= 47 and phase_percent <= 53:
+            return "First Quarter", "🌓"
+        else:
+            return "Waxing Gibbous", "🌔"
+
+    except Exception as e:
+        logger.error(f"Error calculating moon phase: {str(e)}")
+        return "Unable to calculate moon phase", "❓"
+
+async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /hi command for the default location (Herceg Novi)"""
+    try:
+        logger.info("Received /hi command, calculating moon phase...")
         phase_name, emoji = get_moon_phase()
-        logger.info(f"Calculated moon phase: {phase_name} {emoji}")
-        # Use default coordinates for Herceg Novi
-        sunrise_time, sunset_time = get_sun_times(HERCEG_NOVI_LAT, HERCEG_NOVI_LON)
-        # Get weather data for Herceg Novi
-        min_temp, max_temp, pressure, weather_description, _, _ = await get_weather()
+        logger.info(f"Calculated phase: {phase_name} {emoji}")
+        sunrise_time, sunset_time = get_sun_times()
+        min_temp, max_temp, pressure, weather_description = await get_weather()
 
         current_date = datetime.now().strftime('%A %d/%m')
         if all(v is not None for v in [min_temp, max_temp, pressure, weather_description]):
@@ -192,75 +230,86 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             f"🌇 Sunset: {sunset_time}\n"
             f"{emoji} Moon Phase: {phase_name}"
         )
+
         await update.message.reply_text(message)
     except Exception as e:
-        logger.error(f"Error in hi_command: {e}")
+        logger.error(f"Error in hi_command: {str(e)}")
         await update.message.reply_text(
             "Sorry, I encountered an error while processing your request. Please try again later."
         )
 
-async def city_forecast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def forecast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Handle commands that are not explicitly registered.
-    This function assumes the command (e.g. /london) represents a city name.
-    It retrieves weather data, extracts the city coordinates,
-    calculates sunrise and sunset times for that city, and returns the forecast.
+    Handle the /forecast command.
+    The user should type: /forecast <city name>
     """
     try:
-        # Extract the command text without the leading slash.
-        command_text = update.message.text.strip()
-        if not command_text.startswith('/'):
+        if not context.args:
+            await update.message.reply_text("Please provide a city name. Usage: /forecast <city>")
             return
 
-        city_name = command_text[1:].split()[0]  # e.g., "london" from "/london"
+        city_name = " ".join(context.args)
+        min_temp, max_temp, pressure, weather_description = await get_weather(city=city_name)
+        if all(v is not None for v in [min_temp, max_temp, pressure, weather_description]):
+            forecast_message = (
+                f"Forecast for {city_name}:\n"
+                f"🌡 Weather: {weather_description}\n"
+                f"❄️ Min Temp: {min_temp}°C\n"
+                f"☀️ Max Temp: {max_temp}°C\n"
+                f"🌬 Pressure: {pressure} hPa"
+            )
+        else:
+            forecast_message = f"Weather data for {city_name} is currently unavailable."
+        await update.message.reply_text(forecast_message)
+    except Exception as e:
+        logger.error(f"Error in forecast_command: {e}")
+        await update.message.reply_text("Sorry, an error occurred while retrieving the forecast.")
+
+async def city_forecast_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle messages that are not commands.
+    Treat the message text as a city name and return the forecast.
+    """
+    try:
+        city_name = update.message.text.strip()
         if not city_name:
             await update.message.reply_text("Please provide a valid city name.")
             return
 
-        # Get weather data and coordinates for the requested city.
-        min_temp, max_temp, pressure, weather_description, city_lat, city_lon = await get_weather(city=city_name)
-        current_date = datetime.now().strftime('%A %d/%m')
-        if None in [min_temp, max_temp, pressure, weather_description]:
-            forecast_message = f"Weather data for {city_name.title()} is currently unavailable."
-        else:
-            # Calculate sunrise and sunset times using the city's coordinates if available.
-            if city_lat is not None and city_lon is not None:
-                sunrise_time, sunset_time = get_sun_times(city_lat, city_lon)
-                sun_info = f"🌅 Sunrise: {sunrise_time}\n🌇 Sunset: {sunset_time}\n"
-            else:
-                sun_info = ""
+        min_temp, max_temp, pressure, weather_description = await get_weather(city=city_name)
+        if all(v is not None for v in [min_temp, max_temp, pressure, weather_description]):
             forecast_message = (
-                f"🌍 {city_name.title()}, {current_date}:\n"
+                f"Forecast for {city_name}:\n"
                 f"🌡 Weather: {weather_description}\n"
                 f"❄️ Min Temp: {min_temp}°C\n"
                 f"☀️ Max Temp: {max_temp}°C\n"
-                f"🌬 Pressure: {pressure} hPa\n"
-                f"{sun_info}"
+                f"🌬 Pressure: {pressure} hPa"
             )
+        else:
+            forecast_message = f"Weather data for {city_name} is currently unavailable."
         await update.message.reply_text(forecast_message)
     except Exception as e:
-        logger.error(f"Error in city_forecast_command: {e}")
+        logger.error(f"Error in city_forecast_handler: {e}")
         await update.message.reply_text("Sorry, an error occurred while retrieving the forecast.")
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send updated welcome message."""
+    """Handle the /start command with updated welcome message."""
     try:
         logger.info("Received /start command, sending welcome message...")
         message = (
             "Hello! 👋\n\n"
             "Get weather data for Herceg Novi using /hi.\n\n"
-            "Or request another city's forecast by typing a command in this format:\n"
-            "e.g., /london, /moscow, /tokyo."
+            "Or type a city name to get the forecast for that location."
         )
         await update.message.reply_text(message)
     except Exception as e:
-        logger.error(f"Error in start_command: {e}")
+        logger.error(f"Error in start_command: {str(e)}")
         await update.message.reply_text(
             "Sorry, I encountered an error while processing your request. Please try again later."
         )
 
 async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle errors in the Telegram bot."""
+    """Handle errors in the telegram bot."""
     error_message = f"Error: {context.error}"
     if update:
         error_message = f"Update {update} caused {error_message}"
@@ -269,7 +318,7 @@ async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_
         if update is not None and update.message is not None:
             await update.message.reply_text("Sorry, something went wrong. Please try again later.")
     except Exception as e:
-        logger.error(f"Error in error handler: {e}")
+        logger.error(f"Error in error handler: {str(e)}")
 
 def main() -> None:
     """Start the bot."""
@@ -281,13 +330,14 @@ def main() -> None:
         application = Application.builder().token(token).build()
         application.add_handler(CommandHandler("start", start_command))
         application.add_handler(CommandHandler("hi", hi_command))
-        # Any unregistered command (e.g., /london, /moscow) is handled here.
-        application.add_handler(MessageHandler(filters.COMMAND, city_forecast_command))
+        application.add_handler(CommandHandler("forecast", forecast_command))
+        # New handler: if a message is not a command, treat it as a city name for forecast.
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, city_forecast_handler))
         application.add_error_handler(error_handler)
         logger.info("Starting bot...")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
     except Exception as e:
-        logger.critical(f"Error starting bot: {e}")
+        logger.critical(f"Error starting bot: {str(e)}")
         raise
 
 if __name__ == '__main__':
