@@ -2,7 +2,7 @@ import os
 import logging
 from typing import Union, Optional
 import ephem  # type: ignore
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv  # type: ignore
 import httpx
 from telegram import __version__ as TG_VER, Update  # type: ignore
@@ -33,16 +33,17 @@ load_dotenv()
 HERCEG_NOVI_LAT = 42.4531
 HERCEG_NOVI_LON = 18.5375
 
-async def get_weather() -> tuple[Optional[float], Optional[float], Optional[float]]:
+async def get_weather() -> tuple[Optional[float], Optional[float], Optional[float], Optional[str]]:
     """
-    Get current weather data for Herceg Novi from Weatherbit
-    Returns: tuple(min_temp, max_temp, pressure) or (None, None, None) if error
+    Get current weather data for Herceg Novi from Weatherbit.
+    Returns: tuple(min_temp, max_temp, pressure, weather_description)
+             or (None, None, None, None) if error occurs.
     """
     try:
         api_key = os.getenv('WEATHERBIT_API_KEY')
         if not api_key:
             logger.error("Weatherbit API key not found in environment variables")
-            return None, None, None
+            return None, None, None, None
 
         # Add days parameter and specify units as metric
         url = f"https://api.weatherbit.io/v2.0/forecast/daily?lat={HERCEG_NOVI_LAT}&lon={HERCEG_NOVI_LON}&key={api_key}&days=1"
@@ -56,10 +57,10 @@ async def get_weather() -> tuple[Optional[float], Optional[float], Optional[floa
             # Check for specific error status codes
             if response.status_code == 403:
                 logger.error("Invalid or expired API key. Please check your Weatherbit API key.")
-                return None, None, None
+                return None, None, None, None
             elif response.status_code == 429:
                 logger.error("Too many requests. API rate limit exceeded.")
-                return None, None, None
+                return None, None, None, None
 
             response.raise_for_status()
             data = response.json()
@@ -85,21 +86,26 @@ async def get_weather() -> tuple[Optional[float], Optional[float], Optional[floa
 
                 if os.getenv('ENVIRONMENT') != 'production':
                     logger.info(f"Pressure: {pressure} hPa")
+                
+                # Extract weather description from the nested weather object
+                weather_description = today_data.get('weather', {}).get('description')
+                if os.getenv('ENVIRONMENT') != 'production':
+                    logger.info(f"Weather description: {weather_description}")
 
-                return min_temp, max_temp, pressure
+                return min_temp, max_temp, pressure, weather_description
             else:
                 logger.error("Missing weather data in API response")
-                return None, None, None
+                return None, None, None, None
 
     except httpx.HTTPError as e:
         logger.error(f"HTTP error fetching weather data: {e}")
-        return None, None, None
+        return None, None, None, None
     except (ValueError, TypeError) as e:
         logger.error(f"Error processing weather data: {e}")
-        return None, None, None
+        return None, None, None, None
     except Exception as e:
         logger.error(f"Unexpected error fetching weather data: {e}")
-        return None, None, None
+        return None, None, None, None
 
 def get_sun_times(custom_date: Optional[datetime] = None) -> tuple:
     """
@@ -142,7 +148,6 @@ def get_sun_times(custom_date: Optional[datetime] = None) -> tuple:
                 logger.info(f"Raw next setting: {next_setting}")
 
             # Convert ephem.Date to Python datetime and add UTC+1 offset
-            from datetime import timedelta
             sunrise_local = ephem.Date(next_rising).datetime() + timedelta(hours=1)
             sunset_local = ephem.Date(next_setting).datetime() + timedelta(hours=1)
         except ephem.CircumpolarError:
@@ -245,16 +250,25 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         # Get sunrise and sunset times
         sunrise_time, sunset_time = get_sun_times()
 
-        # Get weather data
-        min_temp, max_temp, pressure = await get_weather()
+        # Get weather data, including the weather description
+        min_temp, max_temp, pressure, weather_description = await get_weather()
 
-        # Format message with location, date, sun times, temperature, pressure, sunset, and moon phase
+        # Format message with location, date, sun times, weather, and moon phase
         current_date = datetime.now().strftime('%A %d/%m')
-        temp_info = f"❄️ Min Temp: {min_temp}°C\n☀️ Max Temp: {max_temp}°C\n🌬 Pressure: {pressure} hPa" if min_temp is not None and max_temp is not None and pressure is not None else "Weather data currently unavailable"
+        if all(v is not None for v in [min_temp, max_temp, pressure, weather_description]):
+            weather_info = (
+                f"🌡 Weather: {weather_description}\n"
+                f"❄️ Min Temp: {min_temp}°C\n"
+                f"☀️ Max Temp: {max_temp}°C\n"
+                f"🌬 Pressure: {pressure} hPa"
+            )
+        else:
+            weather_info = "Weather data currently unavailable"
+            
         message = (
             f"🌍 Herceg Novi, {current_date}:\n"
             f"🌅 Sunrise: {sunrise_time}\n"
-            f"{temp_info}\n"
+            f"{weather_info}\n"
             f"🌇 Sunset: {sunset_time}\n"
             f"{emoji} Moon Phase: {phase_name}"
         )
