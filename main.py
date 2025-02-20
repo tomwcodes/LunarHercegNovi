@@ -120,48 +120,6 @@ async def get_weather(city: Optional[str] = None) -> tuple[
         logger.error(f"Unexpected error fetching weather data: {e}")
         return None, None, None, None, None, None
 
-def get_sun_times(lat: float, lon: float, custom_date: Optional[datetime] = None) -> tuple:
-    """
-    Calculate sunrise and sunset times for a given latitude and longitude.
-    Returns a tuple: (sunrise_time, sunset_time)
-    """
-    try:
-        observer = ephem.Observer()
-        observer.lat = str(lat)
-        observer.lon = str(lon)
-        observer.elevation = 10  # assuming an elevation of 10m; adjust if needed
-        observer.pressure = 0    # disable refraction calculation
-        observer.horizon = '-0:34'
-        now = custom_date if custom_date else datetime.utcnow()
-        observer.date = ephem.Date(now)
-
-        if os.getenv('ENVIRONMENT') != 'production':
-            logger.info(f"Sun Times Calculation: lat={observer.lat}, lon={observer.lon}, elevation={observer.elevation}, date={now}")
-
-        sun = ephem.Sun()
-        sun.compute(observer)
-        try:
-            next_rising = observer.next_rising(sun)
-            next_setting = observer.next_setting(sun)
-            if os.getenv('ENVIRONMENT') != 'production':
-                logger.info(f"Raw next rising: {next_rising}, Raw next setting: {next_setting}")
-            sunrise_local = ephem.Date(next_rising).datetime() + timedelta(hours=1)
-            sunset_local = ephem.Date(next_setting).datetime() + timedelta(hours=1)
-        except ephem.CircumpolarError:
-            logger.error("Sun is circumpolar at this location and date")
-            return "No sunrise", "No sunset"
-
-        sunrise_str = sunrise_local.strftime('%H:%M')
-        sunset_str = sunset_local.strftime('%H:%M')
-        if os.getenv('ENVIRONMENT') != 'production':
-            logger.info(f"Formatted sunrise: {sunrise_str}, sunset: {sunset_str}")
-
-        return sunrise_str, sunset_str
-
-    except Exception as e:
-        logger.error(f"Error calculating sun times: {str(e)}")
-        return "Unknown", "Unknown"
-
 def get_moon_phase(custom_date: Optional[datetime] = None) -> tuple:
     """
     Calculate the current moon phase for Herceg Novi.
@@ -213,7 +171,6 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     try:
         logger.info("Received /hi command, calculating moon phase and weather...")
         phase_name, emoji = get_moon_phase()
-        logger.info(f"Calculated moon phase: {phase_name} {emoji}")
         sunrise_time, sunset_time = get_sun_times(HERCEG_NOVI_LAT, HERCEG_NOVI_LON)
         min_temp, max_temp, pressure, weather_description, _, _ = await get_weather()
 
@@ -246,7 +203,8 @@ async def city_forecast_command(update: Update, context: ContextTypes.DEFAULT_TY
     """
     Handle commands that are not explicitly registered.
     This function assumes that a command like /london represents a city name.
-    It retrieves weather data, calculates sunrise/sunset times, and formats the forecast similarly.
+    It retrieves weather data and formats the forecast similar to the Herceg Novi message,
+    but without sunrise, sunset, or moon phase information.
     """
     try:
         # Extract the command text without the leading slash.
@@ -263,22 +221,13 @@ async def city_forecast_command(update: Update, context: ContextTypes.DEFAULT_TY
         if None in [min_temp, max_temp, pressure, weather_description]:
             forecast_message = f"Weather data for {city_name.title()} is currently unavailable."
         else:
-            if city_lat is not None and city_lon is not None:
-                sunrise_time, sunset_time = get_sun_times(city_lat, city_lon)
-            else:
-                sunrise_time, sunset_time = "Unknown", "Unknown"
-
-            phase_name, emoji = get_moon_phase()
             current_date = datetime.now().strftime('%A %d/%m')
             forecast_message = (
                 f"🌍 {city_name.title()}, {current_date}:\n"
-                f"🌅 Sunrise: {sunrise_time}\n"
                 f"🌡 Weather: {weather_description}\n"
                 f"❄️ Min Temp: {min_temp}°C\n"
                 f"☀️ Max Temp: {max_temp}°C\n"
-                f"🌬 Pressure: {pressure} hPa\n"
-                f"🌇 Sunset: {sunset_time}\n"
-                f"{emoji} Moon Phase: {phase_name}"
+                f"🌬 Pressure: {pressure} hPa"
             )
         await update.message.reply_text(forecast_message)
     except Exception as e:
