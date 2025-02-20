@@ -29,13 +29,15 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
-# Herceg Novi coordinates
+# Default coordinates for Herceg Novi
 HERCEG_NOVI_LAT = 42.4531
 HERCEG_NOVI_LON = 18.5375
 
-async def get_weather() -> tuple[Optional[float], Optional[float], Optional[float], Optional[str]]:
+async def get_weather(city: Optional[str] = None) -> tuple[Optional[float], Optional[float], Optional[float], Optional[str]]:
     """
-    Get current weather data for Herceg Novi from Weatherbit.
+    Get current weather data from Weatherbit.
+    If a city is provided, retrieve forecast using the city name.
+    Otherwise, use default coordinates (Herceg Novi).
     Returns: tuple(min_temp, max_temp, pressure, weather_description)
              or (None, None, None, None) if error occurs.
     """
@@ -45,11 +47,17 @@ async def get_weather() -> tuple[Optional[float], Optional[float], Optional[floa
             logger.error("Weatherbit API key not found in environment variables")
             return None, None, None, None
 
-        # Add days parameter and specify units as metric
-        url = f"https://api.weatherbit.io/v2.0/forecast/daily?lat={HERCEG_NOVI_LAT}&lon={HERCEG_NOVI_LON}&key={api_key}&days=1"
+        # Build URL: if city is provided, use it; otherwise use lat/lon for Herceg Novi.
+        if city:
+            url = f"https://api.weatherbit.io/v2.0/forecast/daily?city={city}&key={api_key}&days=1"
+        else:
+            url = f"https://api.weatherbit.io/v2.0/forecast/daily?lat={HERCEG_NOVI_LAT}&lon={HERCEG_NOVI_LON}&key={api_key}&days=1"
 
         if os.getenv('ENVIRONMENT') != 'production':
-            logger.info(f"Making request to Weatherbit API (without key): {url.split('key=')[0]}key=<HIDDEN>")
+            if city:
+                logger.info(f"Making request to Weatherbit API for city '{city}' (without key): {url.split('key=')[0]}key=<HIDDEN>")
+            else:
+                logger.info(f"Making request to Weatherbit API (without key): {url.split('key=')[0]}key=<HIDDEN>")
 
         async with httpx.AsyncClient() as client:
             response = await client.get(url)
@@ -66,26 +74,18 @@ async def get_weather() -> tuple[Optional[float], Optional[float], Optional[floa
             data = response.json()
 
             if os.getenv('ENVIRONMENT') != 'production':
-                # Log response structure without sensitive data
                 safe_data = {k: v for k, v in data.items() if k != 'data'}
                 logger.info(f"API Response structure: {safe_data}")
 
             if 'data' in data and len(data['data']) > 0:
                 today_data = data['data'][0]
-                # Round temperatures to one decimal place
+                # Extract temperature and pressure details
                 min_temp = round(float(today_data['min_temp']), 1) if 'min_temp' in today_data else None
                 max_temp = round(float(today_data['max_temp']), 1) if 'max_temp' in today_data else None
-
-                if os.getenv('ENVIRONMENT') != 'production':
-                    logger.info(f"Weather data retrieved:")
-                    logger.info(f"Min temperature: {min_temp}°C")
-                    logger.info(f"Max temperature: {max_temp}°C")
-
-                # Get pressure data (in mb/hPa)
                 pressure = round(float(today_data['pres'])) if 'pres' in today_data else None
 
                 if os.getenv('ENVIRONMENT') != 'production':
-                    logger.info(f"Pressure: {pressure} hPa")
+                    logger.info(f"Weather data retrieved: Min {min_temp}°C, Max {max_temp}°C, Pressure {pressure} hPa")
                 
                 # Extract weather description from the nested weather object
                 weather_description = today_data.get('weather', {}).get('description')
@@ -109,126 +109,90 @@ async def get_weather() -> tuple[Optional[float], Optional[float], Optional[floa
 
 def get_sun_times(custom_date: Optional[datetime] = None) -> tuple:
     """
-    Calculate sunrise and sunset times for Herceg Novi
+    Calculate sunrise and sunset times for Herceg Novi.
     Args:
         custom_date: Optional datetime object for testing specific dates
     Returns: tuple(sunrise_time, sunset_time)
     """
     try:
-        # Create observer for Herceg Novi
         observer = ephem.Observer()
-        observer.lat = str(HERCEG_NOVI_LAT)  # ephem expects string in degrees
+        observer.lat = str(HERCEG_NOVI_LAT)
         observer.lon = str(HERCEG_NOVI_LON)
-        observer.elevation = 10  # meters above sea level
-        observer.pressure = 0  # disable refraction calculation
-        observer.horizon = '-0:34'  # standard altitude of the sun's center when it rises/sets
-
-        # Set the date
+        observer.elevation = 10
+        observer.pressure = 0
+        observer.horizon = '-0:34'
         now = custom_date if custom_date else datetime.utcnow()
         observer.date = ephem.Date(now)
 
-        # Log settings in non-production environment
         if os.getenv('ENVIRONMENT') != 'production':
-            logger.info(f"Sun Times Calculation:")
-            logger.info(f"Observer lat: {observer.lat}")
-            logger.info(f"Observer lon: {observer.lon}")
-            logger.info(f"Observer elevation: {observer.elevation}")
-            logger.info(f"Current Date (UTC): {now}")
+            logger.info(f"Sun Times Calculation: lat={observer.lat}, lon={observer.lon}, elevation={observer.elevation}, date={now}")
 
-        # Calculate sun rise/set times
         sun = ephem.Sun()
         sun.compute(observer)
         try:
-            # Get next rising and setting times
             next_rising = observer.next_rising(sun)
             next_setting = observer.next_setting(sun)
-
             if os.getenv('ENVIRONMENT') != 'production':
-                logger.info(f"Raw next rising: {next_rising}")
-                logger.info(f"Raw next setting: {next_setting}")
-
-            # Convert ephem.Date to Python datetime and add UTC+1 offset
+                logger.info(f"Raw next rising: {next_rising}, Raw next setting: {next_setting}")
             sunrise_local = ephem.Date(next_rising).datetime() + timedelta(hours=1)
             sunset_local = ephem.Date(next_setting).datetime() + timedelta(hours=1)
         except ephem.CircumpolarError:
             logger.error("Sun is circumpolar at this location and date")
             return "No sunrise", "No sunset"
 
-        # Format times as strings
         sunrise_str = sunrise_local.strftime('%H:%M')
         sunset_str = sunset_local.strftime('%H:%M')
-
         if os.getenv('ENVIRONMENT') != 'production':
-            logger.info(f"Formatted sunrise: {sunrise_str}")
-            logger.info(f"Formatted sunset: {sunset_str}")
+            logger.info(f"Formatted sunrise: {sunrise_str}, sunset: {sunset_str}")
 
         return sunrise_str, sunset_str
 
     except Exception as e:
         logger.error(f"Error calculating sun times: {str(e)}")
-        logger.error(f"Error type: {type(e).__name__}")
-        logger.error(f"Error details: {str(e)}")
         return "Unknown", "Unknown"
 
 def get_moon_phase(custom_date: Optional[datetime] = None) -> tuple:
     """
-    Calculate the current moon phase for Herceg Novi
+    Calculate the current moon phase for Herceg Novi.
     Args:
         custom_date: Optional datetime object for testing specific dates
     Returns: tuple(phase_name, emoji)
     """
     try:
-        # Create observer for Herceg Novi
         observer = ephem.Observer()
-        observer.lat = str(HERCEG_NOVI_LAT)  # ephem expects string in degrees
+        observer.lat = str(HERCEG_NOVI_LAT)
         observer.lon = str(HERCEG_NOVI_LON)
-        observer.elevation = 10  # meters above sea level
+        observer.elevation = 10
 
-        # Get current moon information
         moon = ephem.Moon()
         moon.compute(observer)
-
-        # Use custom_date if provided, otherwise use current UTC time
         current_date = ephem.Date(custom_date) if custom_date else ephem.Date(datetime.utcnow())
-
-        # Calculate previous and next new moons
         previous_new = ephem.previous_new_moon(current_date)
         next_new = ephem.next_new_moon(current_date)
-
-        # Calculate moon's age (days since last new moon)
         moon_age = current_date - previous_new
         moon_cycle = next_new - previous_new
-
-        # Calculate phase percentage (0-100)
         phase_percent = (moon_age / moon_cycle) * 100
 
-        # Log phase calculation details in non-production environment
         if os.getenv('ENVIRONMENT') != 'production':
-            logger.info(f"Moon Phase Calculation:")
-            logger.info(f"Current Date (UTC): {ephem.Date(current_date).datetime()}")
-            logger.info(f"Previous New Moon: {ephem.Date(previous_new).datetime()}")
-            logger.info(f"Next New Moon: {ephem.Date(next_new).datetime()}")
-            logger.info(f"Moon Age (days): {moon_age * 29.53}")
-            logger.info(f"Moon Cycle (days): {moon_cycle * 29.53}")
-            logger.info(f"Phase Percentage: {phase_percent}%")
-            logger.info(f"Moon Phase: {moon.phase}")
+            logger.info(f"Moon Phase Calculation: current_date={ephem.Date(current_date).datetime()}, "
+                        f"previous_new={ephem.Date(previous_new).datetime()}, next_new={ephem.Date(next_new).datetime()}, "
+                        f"phase_percent={phase_percent}%")
 
-        # Fixed phase percentage ranges for accurate detection
-        if phase_percent >= 97 or phase_percent <= 3:  # Full moon
+        if phase_percent >= 97 or phase_percent <= 3:
             return "Full Moon", "🌕"
-        elif phase_percent > 50 and phase_percent < 97:  # Waning Gibbous
+        elif phase_percent > 50 and phase_percent < 97:
             return "Waning Gibbous", "🌖"
-        elif phase_percent >= 47 and phase_percent <= 53:  # Last Quarter
+        elif phase_percent >= 47 and phase_percent <= 53:
             return "Last Quarter", "🌗"
-        elif phase_percent > 3 and phase_percent < 47:  # Waning Crescent
+        elif phase_percent > 3 and phase_percent < 47:
             return "Waning Crescent", "🌘"
-        elif phase_percent >= 97 or phase_percent <= 3:  # New moon
+        elif phase_percent >= 97 or phase_percent <= 3:
             return "New Moon", "🌑"
-        elif phase_percent > 3 and phase_percent < 47:  # Waxing Crescent
+        elif phase_percent > 3 and phase_percent < 47:
             return "Waxing Crescent", "🌒"
-        elif phase_percent >= 47 and phase_percent <= 53:  # First Quarter
+        elif phase_percent >= 47 and phase_percent <= 53:
             return "First Quarter", "🌓"
-        else:  # Waxing Gibbous
+        else:
             return "Waxing Gibbous", "🌔"
 
     except Exception as e:
@@ -236,24 +200,14 @@ def get_moon_phase(custom_date: Optional[datetime] = None) -> tuple:
         return "Unable to calculate moon phase", "❓"
 
 async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /hi command"""
+    """Handle the /hi command for the default location (Herceg Novi)"""
     try:
-        # Log before calculating phase
         logger.info("Received /hi command, calculating moon phase...")
-
-        # Use current date for production
         phase_name, emoji = get_moon_phase()
-
-        # Log after calculating phase
         logger.info(f"Calculated phase: {phase_name} {emoji}")
-
-        # Get sunrise and sunset times
         sunrise_time, sunset_time = get_sun_times()
-
-        # Get weather data, including the weather description
         min_temp, max_temp, pressure, weather_description = await get_weather()
 
-        # Format message with location, date, sun times, weather, and moon phase
         current_date = datetime.now().strftime('%A %d/%m')
         if all(v is not None for v in [min_temp, max_temp, pressure, weather_description]):
             weather_info = (
@@ -264,7 +218,7 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             )
         else:
             weather_info = "Weather data currently unavailable"
-            
+
         message = (
             f"🌍 Herceg Novi, {current_date}:\n"
             f"🌅 Sunrise: {sunrise_time}\n"
@@ -277,63 +231,77 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     except Exception as e:
         logger.error(f"Error in hi_command: {str(e)}")
         await update.message.reply_text(
-            "Sorry, I encountered an error while processing your request. "
-            "Please try again later."
+            "Sorry, I encountered an error while processing your request. Please try again later."
         )
+
+async def forecast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle the /forecast command.
+    The user should type: /forecast <city name>
+    The bot will retrieve the forecast for the provided location.
+    """
+    try:
+        if not context.args:
+            await update.message.reply_text("Please provide a city name. Usage: /forecast <city>")
+            return
+
+        city_name = " ".join(context.args)
+        min_temp, max_temp, pressure, weather_description = await get_weather(city=city_name)
+        if all(v is not None for v in [min_temp, max_temp, pressure, weather_description]):
+            forecast_message = (
+                f"Forecast for {city_name}:\n"
+                f"🌡 Weather: {weather_description}\n"
+                f"❄️ Min Temp: {min_temp}°C\n"
+                f"☀️ Max Temp: {max_temp}°C\n"
+                f"🌬 Pressure: {pressure} hPa"
+            )
+        else:
+            forecast_message = f"Weather data for {city_name} is currently unavailable."
+        await update.message.reply_text(forecast_message)
+    except Exception as e:
+        logger.error(f"Error in forecast_command: {e}")
+        await update.message.reply_text("Sorry, an error occurred while retrieving the forecast.")
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /start command"""
     try:
         logger.info("Received /start command, sending welcome message...")
         message = (
-            f"Hello! 👋\n\n"
-            f"I can provide weather data for Herceg Novi. Just say /hi"
+            "Hello! 👋\n\n"
+            "I can provide weather data for Herceg Novi using /hi.\n"
+            "Or type /forecast <city> to get the forecast for a specific location."
         )
         await update.message.reply_text(message)
     except Exception as e:
         logger.error(f"Error in start_command: {str(e)}")
         await update.message.reply_text(
-            "Sorry, I encountered an error while processing your request. "
-            "Please try again later."
+            "Sorry, I encountered an error while processing your request. Please try again later."
         )
 
 async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle errors in the telegram bot"""
-    # Log the error with update information if available
     error_message = f"Error: {context.error}"
     if update:
         error_message = f"Update {update} caused {error_message}"
     logger.error(error_message)
-
     try:
-        # Only attempt to reply if we have a valid update with a message
         if update is not None and update.message is not None:
-            await update.message.reply_text(
-                "Sorry, something went wrong. Please try again later."
-            )
+            await update.message.reply_text("Sorry, something went wrong. Please try again later.")
     except Exception as e:
         logger.error(f"Error in error handler: {str(e)}")
 
 def main() -> None:
     """Start the bot"""
-    # Get the token from environment variable
     token = os.getenv('TELEGRAM_BOT_TOKEN')
     if not token:
         logger.critical("No token found! Make sure to set TELEGRAM_BOT_TOKEN environment variable.")
         raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
-
     try:
-        # Create application
         application = Application.builder().token(token).build()
-
-        # Add command handlers
         application.add_handler(CommandHandler("start", start_command))
         application.add_handler(CommandHandler("hi", hi_command))
-
-        # Add error handler
+        application.add_handler(CommandHandler("forecast", forecast_command))
         application.add_error_handler(error_handler)
-
-        # Start the bot
         logger.info("Starting bot...")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
     except Exception as e:
