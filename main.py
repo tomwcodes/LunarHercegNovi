@@ -1,12 +1,19 @@
 import os
 import logging
-from typing import Union, Optional
+from typing import Optional
 import ephem  # type: ignore
 from datetime import datetime, timedelta
 from dotenv import load_dotenv  # type: ignore
 import httpx
 from telegram import __version__ as TG_VER, Update  # type: ignore
-from telegram.ext import Application, CommandHandler, ContextTypes, CallbackContext  # type: ignore
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    CallbackContext,
+    filters
+)  # type: ignore
 
 try:
     from telegram import __version_info__  # type: ignore
@@ -39,7 +46,7 @@ async def get_weather(city: Optional[str] = None) -> tuple[Optional[float], Opti
     If a city is provided, retrieve forecast using the city name.
     Otherwise, use default coordinates (Herceg Novi).
     Returns: tuple(min_temp, max_temp, pressure, weather_description)
-             or (None, None, None, None) if error occurs.
+             or (None, None, None, None) if an error occurs.
     """
     try:
         api_key = os.getenv('WEATHERBIT_API_KEY')
@@ -47,22 +54,21 @@ async def get_weather(city: Optional[str] = None) -> tuple[Optional[float], Opti
             logger.error("Weatherbit API key not found in environment variables")
             return None, None, None, None
 
-        # Build URL: if city is provided, use it; otherwise use lat/lon for Herceg Novi.
         if city:
             url = f"https://api.weatherbit.io/v2.0/forecast/daily?city={city}&key={api_key}&days=1"
         else:
             url = f"https://api.weatherbit.io/v2.0/forecast/daily?lat={HERCEG_NOVI_LAT}&lon={HERCEG_NOVI_LON}&key={api_key}&days=1"
 
         if os.getenv('ENVIRONMENT') != 'production':
+            key_info = url.split('key=')[0] + "key=<HIDDEN>"
             if city:
-                logger.info(f"Making request to Weatherbit API for city '{city}' (without key): {url.split('key=')[0]}key=<HIDDEN>")
+                logger.info(f"Making request to Weatherbit API for city '{city}': {key_info}")
             else:
-                logger.info(f"Making request to Weatherbit API (without key): {url.split('key=')[0]}key=<HIDDEN>")
+                logger.info(f"Making request to Weatherbit API: {key_info}")
 
         async with httpx.AsyncClient() as client:
             response = await client.get(url)
 
-            # Check for specific error status codes
             if response.status_code == 403:
                 logger.error("Invalid or expired API key. Please check your Weatherbit API key.")
                 return None, None, None, None
@@ -79,7 +85,6 @@ async def get_weather(city: Optional[str] = None) -> tuple[Optional[float], Opti
 
             if 'data' in data and len(data['data']) > 0:
                 today_data = data['data'][0]
-                # Extract temperature and pressure details
                 min_temp = round(float(today_data['min_temp']), 1) if 'min_temp' in today_data else None
                 max_temp = round(float(today_data['max_temp']), 1) if 'max_temp' in today_data else None
                 pressure = round(float(today_data['pres'])) if 'pres' in today_data else None
@@ -87,7 +92,6 @@ async def get_weather(city: Optional[str] = None) -> tuple[Optional[float], Opti
                 if os.getenv('ENVIRONMENT') != 'production':
                     logger.info(f"Weather data retrieved: Min {min_temp}°C, Max {max_temp}°C, Pressure {pressure} hPa")
                 
-                # Extract weather description from the nested weather object
                 weather_description = today_data.get('weather', {}).get('description')
                 if os.getenv('ENVIRONMENT') != 'production':
                     logger.info(f"Weather description: {weather_description}")
@@ -238,7 +242,6 @@ async def forecast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """
     Handle the /forecast command.
     The user should type: /forecast <city name>
-    The bot will retrieve the forecast for the provided location.
     """
     try:
         if not context.args:
@@ -262,14 +265,41 @@ async def forecast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         logger.error(f"Error in forecast_command: {e}")
         await update.message.reply_text("Sorry, an error occurred while retrieving the forecast.")
 
+async def city_forecast_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle messages that are not commands.
+    Treat the message text as a city name and return the forecast.
+    """
+    try:
+        city_name = update.message.text.strip()
+        if not city_name:
+            await update.message.reply_text("Please provide a valid city name.")
+            return
+
+        min_temp, max_temp, pressure, weather_description = await get_weather(city=city_name)
+        if all(v is not None for v in [min_temp, max_temp, pressure, weather_description]):
+            forecast_message = (
+                f"Forecast for {city_name}:\n"
+                f"🌡 Weather: {weather_description}\n"
+                f"❄️ Min Temp: {min_temp}°C\n"
+                f"☀️ Max Temp: {max_temp}°C\n"
+                f"🌬 Pressure: {pressure} hPa"
+            )
+        else:
+            forecast_message = f"Weather data for {city_name} is currently unavailable."
+        await update.message.reply_text(forecast_message)
+    except Exception as e:
+        logger.error(f"Error in city_forecast_handler: {e}")
+        await update.message.reply_text("Sorry, an error occurred while retrieving the forecast.")
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /start command"""
+    """Handle the /start command with updated welcome message."""
     try:
         logger.info("Received /start command, sending welcome message...")
         message = (
             "Hello! 👋\n\n"
-            "I can provide weather data for Herceg Novi using /hi.\n"
-            "Or type /forecast <city> to get the forecast for a specific location."
+            "Get weather data for Herceg Novi using /hi.\n\n"
+            "Or type a city name to get the forecast for that location."
         )
         await update.message.reply_text(message)
     except Exception as e:
@@ -279,7 +309,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
 
 async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle errors in the telegram bot"""
+    """Handle errors in the telegram bot."""
     error_message = f"Error: {context.error}"
     if update:
         error_message = f"Update {update} caused {error_message}"
@@ -291,7 +321,7 @@ async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_
         logger.error(f"Error in error handler: {str(e)}")
 
 def main() -> None:
-    """Start the bot"""
+    """Start the bot."""
     token = os.getenv('TELEGRAM_BOT_TOKEN')
     if not token:
         logger.critical("No token found! Make sure to set TELEGRAM_BOT_TOKEN environment variable.")
@@ -301,6 +331,8 @@ def main() -> None:
         application.add_handler(CommandHandler("start", start_command))
         application.add_handler(CommandHandler("hi", hi_command))
         application.add_handler(CommandHandler("forecast", forecast_command))
+        # New handler: if a message is not a command, treat it as a city name for forecast.
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, city_forecast_handler))
         application.add_error_handler(error_handler)
         logger.info("Starting bot...")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
