@@ -96,7 +96,7 @@ async def get_weather(city: Optional[str] = None) -> tuple[
                 pressure = round(float(today_data['pres'])) if 'pres' in today_data else None
                 weather_description = today_data.get('weather', {}).get('description')
 
-                # Extract city coordinates if available
+                # Extract the city coordinates from the top-level response (if available)
                 city_lat = data.get('lat')
                 city_lon = data.get('lon')
 
@@ -120,58 +120,58 @@ async def get_weather(city: Optional[str] = None) -> tuple[
         logger.error(f"Unexpected error fetching weather data: {e}")
         return None, None, None, None, None, None
 
-def get_moon_phase(custom_date: Optional[datetime] = None) -> tuple:
+def get_sun_times(lat: float, lon: float, custom_date: Optional[datetime] = None) -> tuple:
     """
-    Calculate the current moon phase for Herceg Novi.
-    Returns a tuple: (phase_name, emoji)
+    Calculate sunrise and sunset times for a given latitude and longitude.
+    Returns a tuple: (sunrise_time, sunset_time)
     """
     try:
         observer = ephem.Observer()
-        observer.lat = str(HERCEG_NOVI_LAT)
-        observer.lon = str(HERCEG_NOVI_LON)
-        observer.elevation = 10
-
-        moon = ephem.Moon()
-        moon.compute(observer)
-        current_date = ephem.Date(custom_date) if custom_date else ephem.Date(datetime.utcnow())
-        previous_new = ephem.previous_new_moon(current_date)
-        next_new = ephem.next_new_moon(current_date)
-        moon_age = current_date - previous_new
-        moon_cycle = next_new - previous_new
-        phase_percent = (moon_age / moon_cycle) * 100
+        observer.lat = str(lat)
+        observer.lon = str(lon)
+        observer.elevation = 10  # assuming an elevation of 10m; adjust if needed
+        observer.pressure = 0    # disable refraction calculation
+        observer.horizon = '-0:34'
+        now = custom_date if custom_date else datetime.utcnow()
+        observer.date = ephem.Date(now)
 
         if os.getenv('ENVIRONMENT') != 'production':
-            logger.info(f"Moon Phase Calculation: current_date={ephem.Date(current_date).datetime()}, "
-                        f"previous_new={ephem.Date(previous_new).datetime()}, next_new={ephem.Date(next_new).datetime()}, "
-                        f"phase_percent={phase_percent}%")
+            logger.info(f"Sun Times Calculation: lat={observer.lat}, lon={observer.lon}, elevation={observer.elevation}, date={now}")
 
-        if phase_percent >= 97 or phase_percent <= 3:
-            return "Full Moon", "🌕"
-        elif phase_percent > 50 and phase_percent < 97:
-            return "Waning Gibbous", "🌖"
-        elif phase_percent >= 47 and phase_percent <= 53:
-            return "Last Quarter", "🌗"
-        elif phase_percent > 3 and phase_percent < 47:
-            return "Waning Crescent", "🌘"
-        elif phase_percent >= 97 or phase_percent <= 3:
-            return "New Moon", "🌑"
-        elif phase_percent > 3 and phase_percent < 47:
-            return "Waxing Crescent", "🌒"
-        elif phase_percent >= 47 and phase_percent <= 53:
-            return "First Quarter", "🌓"
-        else:
-            return "Waxing Gibbous", "🌔"
+        sun = ephem.Sun()
+        sun.compute(observer)
+        try:
+            next_rising = observer.next_rising(sun)
+            next_setting = observer.next_setting(sun)
+            if os.getenv('ENVIRONMENT') != 'production':
+                logger.info(f"Raw next rising: {next_rising}, Raw next setting: {next_setting}")
+            sunrise_local = ephem.Date(next_rising).datetime() + timedelta(hours=1)
+            sunset_local = ephem.Date(next_setting).datetime() + timedelta(hours=1)
+        except ephem.CircumpolarError:
+            logger.error("Sun is circumpolar at this location and date")
+            return "No sunrise", "No sunset"
+
+        sunrise_str = sunrise_local.strftime('%H:%M')
+        sunset_str = sunset_local.strftime('%H:%M')
+        if os.getenv('ENVIRONMENT') != 'production':
+            logger.info(f"Formatted sunrise: {sunrise_str}, sunset: {sunset_str}")
+
+        return sunrise_str, sunset_str
 
     except Exception as e:
-        logger.error(f"Error calculating moon phase: {str(e)}")
-        return "Unable to calculate moon phase", "❓"
+        logger.error(f"Error calculating sun times: {str(e)}")
+        return "Unknown", "Unknown"
 
 async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /hi command for the default location (Herceg Novi)."""
     try:
         logger.info("Received /hi command, calculating moon phase and weather...")
+        # Get moon phase for default location
         phase_name, emoji = get_moon_phase()
+        logger.info(f"Calculated moon phase: {phase_name} {emoji}")
+        # Use default coordinates for Herceg Novi
         sunrise_time, sunset_time = get_sun_times(HERCEG_NOVI_LAT, HERCEG_NOVI_LON)
+        # Get weather data for Herceg Novi
         min_temp, max_temp, pressure, weather_description, _, _ = await get_weather()
 
         current_date = datetime.now().strftime('%A %d/%m')
@@ -202,9 +202,9 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def city_forecast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handle commands that are not explicitly registered.
-    This function assumes that a command like /london represents a city name.
-    It retrieves weather data and formats the forecast similar to the Herceg Novi message,
-    but without sunrise, sunset, or moon phase information.
+    This function assumes the command (e.g. /london) represents a city name.
+    It retrieves weather data, extracts the city coordinates,
+    calculates sunrise and sunset times for that city, and returns the forecast.
     """
     try:
         # Extract the command text without the leading slash.
@@ -217,17 +217,25 @@ async def city_forecast_command(update: Update, context: ContextTypes.DEFAULT_TY
             await update.message.reply_text("Please provide a valid city name.")
             return
 
+        # Get weather data and coordinates for the requested city.
         min_temp, max_temp, pressure, weather_description, city_lat, city_lon = await get_weather(city=city_name)
+        current_date = datetime.now().strftime('%A %d/%m')
         if None in [min_temp, max_temp, pressure, weather_description]:
             forecast_message = f"Weather data for {city_name.title()} is currently unavailable."
         else:
-            current_date = datetime.now().strftime('%A %d/%m')
+            # Calculate sunrise and sunset times using the city's coordinates if available.
+            if city_lat is not None and city_lon is not None:
+                sunrise_time, sunset_time = get_sun_times(city_lat, city_lon)
+                sun_info = f"🌅 Sunrise: {sunrise_time}\n🌇 Sunset: {sunset_time}\n"
+            else:
+                sun_info = ""
             forecast_message = (
                 f"🌍 {city_name.title()}, {current_date}:\n"
                 f"🌡 Weather: {weather_description}\n"
                 f"❄️ Min Temp: {min_temp}°C\n"
                 f"☀️ Max Temp: {max_temp}°C\n"
-                f"🌬 Pressure: {pressure} hPa"
+                f"🌬 Pressure: {pressure} hPa\n"
+                f"{sun_info}"
             )
         await update.message.reply_text(forecast_message)
     except Exception as e:
