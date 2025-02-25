@@ -99,13 +99,13 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         
         message = (
             f"🌍 Herceg Novi, {current_date}:\n"
+            f"🌅 Sunrise: {datetime.fromtimestamp(sunrise).strftime('%H:%M')}\n"
             f"🌡 Weather: {weather_description}\n"
             f"❄️ Min Temp: {min_temp}°C\n"
             f"☀️ Max Temp: {max_temp}°C\n"
             f"🌬 Pressure: {pressure} hPa\n"
-            f"🌖 Moon Phase: {moon_phase_text}\n"
-            f"🌅 Sunrise: {datetime.fromtimestamp(sunrise).strftime('%H:%M')}\n"
-            f"🌇 Sunset: {datetime.fromtimestamp(sunset).strftime('%H:%M')}"
+            f"🌇 Sunset: {datetime.fromtimestamp(sunset).strftime('%H:%M')}\n"
+            f"🌖 Moon Phase: {moon_phase_text}"
         ) if all(v is not None for v in [min_temp, max_temp, pressure, weather_description, moon_phase_text, sunrise, sunset]) else "Weather data currently unavailable"
 
         await update.message.reply_text(message)
