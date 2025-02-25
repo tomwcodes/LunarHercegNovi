@@ -2,28 +2,15 @@ import os
 import logging
 from typing import Optional
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime
 from dotenv import load_dotenv  # type: ignore
 from telegram import __version__ as TG_VER, Update  # type: ignore
 from telegram.ext import (
     Application,
     CommandHandler,
-    MessageHandler,
     ContextTypes,
-    CallbackContext,
     filters
 )  # type: ignore
-
-try:
-    from telegram import __version_info__  # type: ignore
-except ImportError:
-    __version_info__ = (0, 0, 0, 0, 0)  # type: ignore[assignment]
-
-if __version_info__ < (20, 0, 0, "alpha", 1):
-    raise RuntimeError(
-        f"This example is not compatible with your current PTB version {TG_VER}. To view the "
-        f"20.x version of this example, visit https://docs.python-telegram-bot.org/en/v20.7/examples.html"
-    )
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -36,10 +23,31 @@ load_dotenv()
 HERCEG_NOVI_LAT = 42.4531
 HERCEG_NOVI_LON = 18.5375
 
+def get_moon_phase_name(moon_phase: float) -> str:
+    """
+    Convert moon phase numerical value to a text description.
+    """
+    if 0 <= moon_phase < 0.125:
+        return "New Moon"
+    elif 0.125 <= moon_phase < 0.25:
+        return "Waxing Crescent"
+    elif 0.25 <= moon_phase < 0.375:
+        return "First Quarter"
+    elif 0.375 <= moon_phase < 0.5:
+        return "Waxing Gibbous"
+    elif 0.5 <= moon_phase < 0.625:
+        return "Full Moon"
+    elif 0.625 <= moon_phase < 0.75:
+        return "Waning Gibbous"
+    elif 0.75 <= moon_phase < 0.875:
+        return "Last Quarter"
+    else:
+        return "Waning Crescent"
+
 async def get_weather_and_moon_data(city: Optional[str] = None) -> tuple:
     """
     Get current weather and moon data from Weatherbit.
-    Returns: tuple(min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase, moon_illumination)
+    Returns: tuple(min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination)
     """
     try:
         api_key = os.getenv('WEATHERBIT_API_KEY')
@@ -68,7 +76,9 @@ async def get_weather_and_moon_data(city: Optional[str] = None) -> tuple:
                 moon_phase = today_data.get('moon_phase')
                 moon_illumination = today_data.get('moon_phase_lunation')
 
-                return min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase, moon_illumination
+                moon_phase_text = get_moon_phase_name(moon_phase) if moon_phase is not None else "Unknown"
+
+                return min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination
             else:
                 logger.error("Missing data in API response")
                 return None, None, None, None, None, None, None, None
@@ -80,7 +90,7 @@ async def get_weather_and_moon_data(city: Optional[str] = None) -> tuple:
 async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /hi command."""
     try:
-        min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase, moon_illumination = await get_weather_and_moon_data()
+        min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination = await get_weather_and_moon_data()
         current_date = datetime.now().strftime('%A %d/%m')
         
         if all(v is not None for v in [min_temp, max_temp, pressure, weather_description]):
@@ -93,11 +103,11 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         else:
             weather_info = "Weather data currently unavailable"
         
-        if all(v is not None for v in [moonrise, moonset, moon_phase, moon_illumination]):
+        if all(v is not None for v in [moonrise, moonset, moon_phase_text, moon_illumination]):
             moon_info = (
                 f"🌙 Moonrise: {datetime.utcfromtimestamp(moonrise).strftime('%H:%M')} UTC\n"
                 f"🌘 Moonset: {datetime.utcfromtimestamp(moonset).strftime('%H:%M')} UTC\n"
-                f"🌖 Moon Phase: {moon_phase}\n"
+                f"🌖 Moon Phase: {moon_phase_text}\n"
                 f"💡 Moon Illumination: {round(moon_illumination * 100, 1)}%"
             )
         else:
@@ -114,15 +124,11 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         logger.error(f"Error in hi_command: {str(e)}")
         await update.message.reply_text("Sorry, an error occurred while processing your request.")
 
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /start command."""
-    await update.message.reply_text("Hello! 👋 Use /hi to get weather and moon data.")
-
 def main() -> None:
     """Start the bot."""
     token = os.getenv('TELEGRAM_BOT_TOKEN')
     application = Application.builder().token(token).build()
-    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("start", hi_command))
     application.add_handler(CommandHandler("hi", hi_command))
     application.run_polling()
 
