@@ -27,22 +27,23 @@ def get_moon_phase_name(moon_phase: float) -> str:
     """
     Convert moon phase numerical value to a text description.
     """
-    if 0 <= moon_phase < 0.125:
-        return "New Moon"
-    elif 0.125 <= moon_phase < 0.25:
-        return "Waxing Crescent"
-    elif 0.25 <= moon_phase < 0.375:
-        return "First Quarter"
-    elif 0.375 <= moon_phase < 0.5:
-        return "Waxing Gibbous"
-    elif 0.5 <= moon_phase < 0.625:
-        return "Full Moon"
-    elif 0.625 <= moon_phase < 0.75:
-        return "Waning Gibbous"
-    elif 0.75 <= moon_phase < 0.875:
-        return "Last Quarter"
-    else:
-        return "Waning Crescent"
+    if not 0 <= moon_phase <= 1:
+        raise ValueError("Moon phase must be between 0 and 1.")
+
+    phase_intervals = [
+        (0, 0.125, "New Moon"),
+        (0.125, 0.25, "Waxing Crescent"),
+        (0.25, 0.375, "First Quarter"),
+        (0.375, 0.5, "Waxing Gibbous"),
+        (0.5, 0.625, "Full Moon"),
+        (0.625, 0.75, "Waning Gibbous"),
+        (0.75, 0.875, "Last Quarter"),
+        (0.875, 1, "Waning Crescent"),
+    ]
+
+    for lower, upper, phase_name in phase_intervals:
+        if lower <= moon_phase < upper:
+            return phase_name
 
 async def get_weather_and_moon_data(city: Optional[str] = None) -> tuple:
     """
