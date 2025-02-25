@@ -47,13 +47,13 @@ def get_moon_phase_name(moon_phase: float) -> str:
 async def get_weather_and_moon_data(city: Optional[str] = None) -> tuple:
     """
     Get current weather and moon data from Weatherbit.
-    Returns: tuple(min_temp, max_temp, pressure, weather_description, sunrise, sunset, moonrise, moonset, moon_phase_text, moon_illumination)
+    Returns: tuple(min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination)
     """
     try:
         api_key = os.getenv('WEATHERBIT_API_KEY')
         if not api_key:
             logger.error("Weatherbit API key not found in environment variables")
-            return None, None, None, None, None, None, None, None, None, None
+            return None, None, None, None, None, None, None, None
 
         if city:
             url = f"https://api.weatherbit.io/v2.0/forecast/daily?city={city}&key={api_key}&days=1"
@@ -71,8 +71,6 @@ async def get_weather_and_moon_data(city: Optional[str] = None) -> tuple:
                 max_temp = today_data.get('max_temp')
                 pressure = today_data.get('pres')
                 weather_description = today_data.get('weather', {}).get('description')
-                sunrise = today_data.get('sunrise')
-                sunset = today_data.get('sunset')
                 moonrise = today_data.get('moonrise_ts')
                 moonset = today_data.get('moonset_ts')
                 moon_phase = today_data.get('moon_phase')
@@ -80,19 +78,19 @@ async def get_weather_and_moon_data(city: Optional[str] = None) -> tuple:
 
                 moon_phase_text = get_moon_phase_name(moon_phase) if moon_phase is not None else "Unknown"
 
-                return min_temp, max_temp, pressure, weather_description, sunrise, sunset, moonrise, moonset, moon_phase_text, moon_illumination
+                return min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination
             else:
                 logger.error("Missing data in API response")
-                return None, None, None, None, None, None, None, None, None, None
+                return None, None, None, None, None, None, None, None
 
     except httpx.HTTPError as e:
         logger.error(f"HTTP error fetching data: {e}")
-        return None, None, None, None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None
 
 async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /hi command."""
     try:
-        min_temp, max_temp, pressure, weather_description, sunrise, sunset, moonrise, moonset, moon_phase_text, moon_illumination = await get_weather_and_moon_data()
+        min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination = await get_weather_and_moon_data()
         current_date = datetime.now().strftime('%A %d/%m')
         
         if all(v is not None for v in [min_temp, max_temp, pressure, weather_description]):
@@ -105,10 +103,8 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         else:
             weather_info = "Weather data currently unavailable"
         
-        if all(v is not None for v in [sunrise, sunset, moonrise, moonset, moon_phase_text, moon_illumination]):
+        if all(v is not None for v in [moonrise, moonset, moon_phase_text, moon_illumination]):
             moon_info = (
-                f"🌅 Sunrise: {sunrise} UTC\n"
-                f"🌇 Sunset: {sunset} UTC\n"
                 f"🌙 Moonrise: {datetime.utcfromtimestamp(moonrise).strftime('%H:%M')} UTC\n"
                 f"🌘 Moonset: {datetime.utcfromtimestamp(moonset).strftime('%H:%M')} UTC\n"
                 f"🌖 Moon Phase: {moon_phase_text}\n"
@@ -127,3 +123,14 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     except Exception as e:
         logger.error(f"Error in hi_command: {str(e)}")
         await update.message.reply_text("Sorry, an error occurred while processing your request.")
+
+def main() -> None:
+    """Start the bot."""
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    application = Application.builder().token(token).build()
+    application.add_handler(CommandHandler("start", hi_command))
+    application.add_handler(CommandHandler("hi", hi_command))
+    application.run_polling()
+
+if __name__ == '__main__':
+    main()
