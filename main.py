@@ -94,31 +94,14 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination = await get_weather_and_moon_data()
         current_date = datetime.now().strftime('%A %d/%m')
         
-        if all(v is not None for v in [min_temp, max_temp, pressure, weather_description]):
-            weather_info = (
-                f"🌡 Weather: {weather_description}\n"
-                f"❄️ Min Temp: {min_temp}°C\n"
-                f"☀️ Max Temp: {max_temp}°C\n"
-                f"🌬 Pressure: {pressure} hPa"
-            )
-        else:
-            weather_info = "Weather data currently unavailable"
-        
-        if all(v is not None for v in [moonrise, moonset, moon_phase_text, moon_illumination]):
-            moon_info = (
-                f"🌙 Moonrise: {datetime.utcfromtimestamp(moonrise).strftime('%H:%M')} UTC\n"
-                f"🌘 Moonset: {datetime.utcfromtimestamp(moonset).strftime('%H:%M')} UTC\n"
-                f"🌖 Moon Phase: {moon_phase_text}\n"
-                f"💡 Moon Illumination: {round(moon_illumination * 100, 1)}%"
-            )
-        else:
-            moon_info = "Moon data currently unavailable"
-
         message = (
             f"🌍 Herceg Novi, {current_date}:\n"
-            f"{weather_info}\n"
-            f"{moon_info}"
-        )
+            f"🌡 Weather: {weather_description}\n"
+            f"❄️ Min Temp: {min_temp}°C\n"
+            f"☀️ Max Temp: {max_temp}°C\n"
+            f"🌬 Pressure: {pressure} hPa\n"
+            f"🌖 Moon Phase: {moon_phase_text}"
+        ) if all(v is not None for v in [min_temp, max_temp, pressure, weather_description, moon_phase_text]) else "Weather data currently unavailable"
 
         await update.message.reply_text(message)
     except Exception as e:
