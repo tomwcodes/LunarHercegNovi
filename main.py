@@ -91,14 +91,18 @@ async def get_weather_and_moon_data(city: Optional[str] = None) -> tuple:
         logger.error(f"HTTP error fetching data: {e}")
         return None, None, None, None, None, None, None, None, None, None
 
-async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /hi command."""
+async def weather_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle weather commands."""
     try:
-        min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination, sunrise, sunset = await get_weather_and_moon_data()
+        command = update.message.text[1:]  # Remove the '/' from command
+        city = command.capitalize() if command not in ["hi", "start"] else None
+        
+        min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination, sunrise, sunset = await get_weather_and_moon_data(city)
         current_date = datetime.now().strftime('%A %d/%m')
+        location = city or "Herceg Novi"
         
         message = (
-            f"🌍 Herceg Novi, {current_date}:\n"
+            f"🌍 {location}, {current_date}:\n"
             f"🌡 Weather: {weather_description}\n"
             f"❄️ Min Temp: {min_temp}°C\n"
             f"☀️ Max Temp: {max_temp}°C\n"
@@ -110,15 +114,21 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
         await update.message.reply_text(message)
     except Exception as e:
-        logger.error(f"Error in hi_command: {str(e)}")
+        logger.error(f"Error in weather_command: {str(e)}")
         await update.message.reply_text("Sorry, an error occurred while processing your request.")
 
 def main() -> None:
     """Start the bot."""
     token = os.getenv('TELEGRAM_BOT_TOKEN')
     application = Application.builder().token(token).build()
-    application.add_handler(CommandHandler("start", hi_command))
-    application.add_handler(CommandHandler("hi", hi_command))
+    
+    # Add handlers for specific commands
+    application.add_handler(CommandHandler("start", weather_command))
+    application.add_handler(CommandHandler("hi", weather_command))
+    
+    # Add handler for any command (for city queries)
+    application.add_handler(CommandHandler(filters.Command.ALL, weather_command))
+    
     application.run_polling()
 
 if __name__ == '__main__':
