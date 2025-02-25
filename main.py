@@ -98,7 +98,7 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         current_date = datetime.now().strftime('%A %d/%m')
         
         message = (
-            f"🌍 Herceg Novi, {current_date}:\n"/br
+            f"🌍 Herceg Novi, {current_date}:\n"
             f"🌅 Sunrise: {datetime.fromtimestamp(sunrise).strftime('%H:%M')}\n"
             f"🌡 Weather: {weather_description}\n"
             f"❄️ Min Temp: {min_temp}°C\n"
