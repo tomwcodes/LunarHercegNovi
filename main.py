@@ -48,7 +48,7 @@ def get_moon_phase_name(moon_phase: float) -> str:
 async def get_weather_and_moon_data(city: Optional[str] = None) -> tuple:
     """
     Get current weather and moon data from Weatherbit.
-    Returns: tuple(min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination)
+    Returns: tuple(min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination, sunrise, sunset)
     """
     try:
         api_key = os.getenv('WEATHERBIT_API_KEY')
@@ -79,19 +79,22 @@ async def get_weather_and_moon_data(city: Optional[str] = None) -> tuple:
 
                 moon_phase_text = get_moon_phase_name(moon_phase) if moon_phase is not None else "Unknown"
 
-                return min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination
+                sunrise = today_data.get('sunrise_ts')
+                sunset = today_data.get('sunset_ts')
+
+                return min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination, sunrise, sunset
             else:
                 logger.error("Missing data in API response")
-                return None, None, None, None, None, None, None, None
+                return None, None, None, None, None, None, None, None, None, None
 
     except httpx.HTTPError as e:
         logger.error(f"HTTP error fetching data: {e}")
-        return None, None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None, None, None
 
 async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /hi command."""
     try:
-        min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination = await get_weather_and_moon_data()
+        min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination, sunrise, sunset = await get_weather_and_moon_data()
         current_date = datetime.now().strftime('%A %d/%m')
         
         message = (
@@ -100,8 +103,10 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             f"❄️ Min Temp: {min_temp}°C\n"
             f"☀️ Max Temp: {max_temp}°C\n"
             f"🌬 Pressure: {pressure} hPa\n"
-            f"🌖 Moon Phase: {moon_phase_text}"
-        ) if all(v is not None for v in [min_temp, max_temp, pressure, weather_description, moon_phase_text]) else "Weather data currently unavailable"
+            f"🌖 Moon Phase: {moon_phase_text}\n"
+            f"🌅 Sunrise: {datetime.fromtimestamp(sunrise).strftime('%H:%M')}\n"
+            f"🌇 Sunset: {datetime.fromtimestamp(sunset).strftime('%H:%M')}"
+        ) if all(v is not None for v in [min_temp, max_temp, pressure, weather_description, moon_phase_text, sunrise, sunset]) else "Weather data currently unavailable"
 
         await update.message.reply_text(message)
     except Exception as e:
