@@ -100,6 +100,10 @@ async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     city = None
     if context.args:
         city = context.args[0]
+
+    welcome_message = "Welcome to the Herceg Novi bot! Use /hi to get weather and moon data. To get data for a specific city, use /hi city_name (e.g., /hi London)."
+    await update.message.reply_text(welcome_message)
+
     try:
         min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination, sunrise, sunset = await get_weather_and_moon_data(city)
         current_date = datetime.now().strftime('%A %d/%m')
