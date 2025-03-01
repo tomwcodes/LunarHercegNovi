@@ -50,11 +50,12 @@ async def get_weather_and_moon_data(city: Optional[str] = None) -> tuple:
     Get current weather and moon data from Weatherbit.
     Returns: tuple(min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination, sunrise, sunset)
     """
+    api_key = os.getenv('WEATHERBIT_API_KEY')
+    if not api_key:
+        logger.error("Weatherbit API key not found in environment variables")
+        return None, None, None, None, None, None, None, None, None, None
+
     try:
-        api_key = os.getenv('WEATHERBIT_API_KEY')
-        if not api_key:
-            logger.error("Weatherbit API key not found in environment variables")
-            return None, None, None, None, None, None, None, None
 
         if city:
             url = f"https://api.weatherbit.io/v2.0/forecast/daily?city={city}&key={api_key}&days=1"
@@ -63,7 +64,7 @@ async def get_weather_and_moon_data(city: Optional[str] = None) -> tuple:
 
         async with httpx.AsyncClient() as client:
             response = await client.get(url)
-            response.raise_for_status()
+            await response.raise_for_status()
             data = response.json()
 
             if 'data' in data and len(data['data']) > 0:
@@ -89,6 +90,9 @@ async def get_weather_and_moon_data(city: Optional[str] = None) -> tuple:
 
     except httpx.HTTPError as e:
         logger.error(f"HTTP error fetching data: {e}")
+        return None, None, None, None, None, None, None, None, None, None
+    except Exception as e:
+        logger.error(f"An unexpected error occurred: {e}")
         return None, None, None, None, None, None, None, None, None, None
 
 async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
