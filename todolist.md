@@ -6,4 +6,4 @@
 - [ ] Add more weather information to the response (e.g., humidity, wind speed).
 - [ ] Implement a /forecast command to get the weather forecast for the next few days.
 - [ ] Deploy the bot to a cloud platform (e.g., Replit, Heroku).
-- [ ] Add unit tests for the core functionality.
+- [x] Add unit tests for the core functionality.

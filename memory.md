@@ -28,3 +28,4 @@
 - The `main` function starts the bot and adds command handlers.
 - Implemented error handling for the Weatherbit API requests in the `get_weather_and_moon_data` function.
 - Added tests for the error handling in the `tests/test_main.py` file.
+- Added a test case to `tests/test_main.py` to check if the moon data is working correctly when the API returns valid data.
