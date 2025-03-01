@@ -97,12 +97,15 @@ async def get_weather_and_moon_data(city: Optional[str] = None) -> tuple:
 
 async def hi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /hi command."""
+    city = None
+    if context.args:
+        city = context.args[0]
     try:
-        min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination, sunrise, sunset = await get_weather_and_moon_data()
+        min_temp, max_temp, pressure, weather_description, moonrise, moonset, moon_phase_text, moon_illumination, sunrise, sunset = await get_weather_and_moon_data(city)
         current_date = datetime.now().strftime('%A %d/%m')
-        
+
         message = (
-            f"🌍 Herceg Novi, {current_date}:\n"
+            f"🌍 {city.capitalize() if city else 'Herceg Novi'}, {current_date}:\n"
             f"🌅 Sunrise: {datetime.fromtimestamp(sunrise).strftime('%H:%M')}\n"
             f"🌡 Weather: {weather_description}\n"
             f"❄️ Min Temp: {min_temp}°C\n"
